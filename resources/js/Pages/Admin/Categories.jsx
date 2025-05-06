@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import AOS from "aos";
 import "aos/dist/aos.css";
-import LogoutModal from "@/Components/LogOutModal";
+import LogoutModal from "@/Components/LogoutModal";
 import AdminSidebar from "./AdminSidebar";
 import { useForm } from "@inertiajs/react";
 import { router } from "@inertiajs/react";
