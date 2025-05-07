@@ -1,0 +1,24 @@
+{
+  "build": {
+    "builder": "nixpacks",
+    "config": {
+      "phases": {
+        "setup": {
+          "nixPkgs": ["nodejs", "php", "composer", "php82Extensions.curl", "php82Extensions.mbstring", "php82Extensions.xml", "php82Extensions.openssl", "php82Extensions.pdo", "php82Extensions.pdo_mysql", "php82Extensions.tokenizer", "php82Extensions.zip"]
+        },
+        "install": [
+          "composer install --no-dev --optimize-autoloader",
+          "npm install",
+          "npm run build"
+        ],
+        "build": [
+          "php artisan optimize:clear",
+          "php artisan optimize"
+        ]
+      },
+      "start": {
+        "cmd": "php artisan serve --host=0.0.0.0 --port=$PORT"
+      }
+    }
+  }
+}
