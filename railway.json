@@ -34,6 +34,6 @@
     }
   },
   "deploy": {
-    "postDeploy": "php artisan migrate --force"
+    "postDeploy": "php artisan migrate --force && php artisan storage:link"
   }
 }
