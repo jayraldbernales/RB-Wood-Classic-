@@ -4,7 +4,19 @@
     "config": {
       "phases": {
         "setup": {
-          "nixPkgs": ["nodejs", "php", "composer", "php82Extensions.curl", "php82Extensions.mbstring", "php82Extensions.xml", "php82Extensions.openssl", "php82Extensions.pdo", "php82Extensions.pdo_mysql", "php82Extensions.tokenizer", "php82Extensions.zip"]
+          "nixPkgs": [
+            "nodejs",
+            "php",
+            "composer",
+            "php82Extensions.curl",
+            "php82Extensions.mbstring",
+            "php82Extensions.xml",
+            "php82Extensions.openssl",
+            "php82Extensions.pdo",
+            "php82Extensions.pdo_mysql",
+            "php82Extensions.tokenizer",
+            "php82Extensions.zip"
+          ]
         },
         "install": [
           "composer install --no-dev --optimize-autoloader",
@@ -12,7 +24,6 @@
           "npm run build"
         ],
         "build": [
-          "php artisan migrate --force", 
           "php artisan optimize:clear",
           "php artisan optimize"
         ]
@@ -23,6 +34,6 @@
     }
   },
   "deploy": {
-    "postDeploy": "php artisan migrate --force"  // ← Redundant safety check
+    "postDeploy": "php artisan migrate --force"
   }
 }
