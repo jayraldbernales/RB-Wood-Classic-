@@ -25,6 +25,15 @@ Route::get('/', function () {
 // Contact Message
 Route::post('/contact', [ContactMessageController::class, 'store'])->name('contact.store');
 
+Route::get('/check-image', function () {
+    $path = 'products/p30xqXrrOH0nGdh5UUkQR4rA6vBmuytiLTU2l2HS.jpg';
+    
+    if (Storage::disk('public')->exists($path)) {
+        return "✅ File exists!";
+    } else {
+        return "❌ File is missing.";
+    }
+});
 
 // Single Checkout
 Route::get('/checkout/product/{product}', [CheckoutController::class, 'showSingleProduct'])
