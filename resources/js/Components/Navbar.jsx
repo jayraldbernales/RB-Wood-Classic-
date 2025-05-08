@@ -46,13 +46,17 @@ const Navbar = ({
         setShowCartModal(true);
     };
 
-    const handleSearchSubmit = (e) => {
-        e.preventDefault();
-        // Redirect to products page with search term
-        router.get(route("products.index"), {
+    const handleSearchSubmit = async (e) => {
+    e.preventDefault();
+    try {
+        await router.get(route("products.index"), {
             search: localSearchTerm,
         });
-    };
+    } catch (error) {
+        console.error("Error during search redirect:", error);
+    }
+};
+
 
     return (
         <>
