@@ -16,7 +16,22 @@ use App\Models\Contact;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
+Route::get('/storage/{folder}/{filename}', function ($folder, $filename) {
+    $path = $folder . '/' . $filename;
+    if (!Storage::disk('public')->exists($path)) {
+        abort(404);
+    }
+
+    return new StreamedResponse(function () use ($path) {
+        echo Storage::disk('public')->get($path);
+    }, 200, [
+        'Content-Type' => Storage::disk('public')->mimeType($path),
+        'Content-Disposition' => 'inline; filename="' . $filename . '"',
+    ]);
+});
 
 // Public Routes
 Route::get('/', function () {
