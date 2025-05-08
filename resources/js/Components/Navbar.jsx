@@ -9,7 +9,7 @@ const Navbar = (props) => {
         setShowLogoutModal = () =>
             console.log("setShowLogoutModal not provided"),
         searchTerm: propSearchTerm = "",
-        setSearchTerm = undefined,
+        setSearchTerm = () => {}, // Ensure this is always a function
     } = props;
 
     const [showCartModal, setShowCartModal] = useState(false);
@@ -56,14 +56,11 @@ const Navbar = (props) => {
     const handleSearchSubmit = (e) => {
         e.preventDefault();
 
-        // If we have setSearchTerm (on products page), use it
-        if (typeof setSearchTerm === "function") {
-            setSearchTerm(searchInput);
-        }
-        // Otherwise redirect to products page
-        else {
-            router.get(route("products.index"), { search: searchInput });
-        }
+        // Always use router to navigate to products page with search parameter
+        router.get(route("products.index"), { search: searchInput });
+        
+        // Also call setSearchTerm if it's available on the current page
+        setSearchTerm(searchInput);
     };
 
     return (
