@@ -3,22 +3,24 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import CartModal from "@/Pages/modals/CartModal ";
 
-const Navbar = ({
-    toggleSidebar = () => {},
-    setShowLogoutModal = () => {},
-    searchTerm: propSearchTerm = "",
-    setSearchTerm = null,
-}) => {
+const Navbar = (props) => {
+    const {
+        toggleSidebar = () => console.log("toggleSidebar not provided"),
+        setShowLogoutModal = () =>
+            console.log("setShowLogoutModal not provided"),
+        searchTerm: propSearchTerm = "",
+        setSearchTerm = undefined,
+    } = props;
+
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
-    const [localSearchTerm, setLocalSearchTerm] = useState(propSearchTerm);
+    const [searchInput, setSearchInput] = useState(propSearchTerm);
 
-    // Sync local search term when prop changes
+    // Sync with prop when it changes
     useEffect(() => {
-        setLocalSearchTerm(propSearchTerm);
+        setSearchInput(propSearchTerm);
     }, [propSearchTerm]);
 
-    // Fetch cart items
     const fetchCartItems = async () => {
         try {
             const response = await axios.get(route("cart.index"));
@@ -48,16 +50,19 @@ const Navbar = ({
 
     const handleSearchChange = (e) => {
         const value = e.target.value;
-        setLocalSearchTerm(value);
-        if (typeof setSearchTerm === "function") {
-            setSearchTerm(value);
-        }
+        setSearchInput(value);
     };
 
     const handleSearchSubmit = (e) => {
         e.preventDefault();
-        if (typeof setSearchTerm !== "function") {
-            router.get(route("products.index"), { search: localSearchTerm });
+
+        // If we have setSearchTerm (on products page), use it
+        if (typeof setSearchTerm === "function") {
+            setSearchTerm(searchInput);
+        }
+        // Otherwise redirect to products page
+        else {
+            router.get(route("products.index"), { search: searchInput });
         }
     };
 
@@ -89,7 +94,7 @@ const Navbar = ({
                                     className="form-control bg-light text-dark px-5"
                                     placeholder="Search products..."
                                     aria-label="Search"
-                                    value={localSearchTerm}
+                                    value={searchInput}
                                     onChange={handleSearchChange}
                                     style={{
                                         paddingLeft: "40px",
@@ -178,7 +183,10 @@ const Navbar = ({
                                     <a
                                         className="dropdown-item"
                                         href="#"
-                                        onClick={() => setShowLogoutModal(true)}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            setShowLogoutModal(true);
+                                        }}
                                     >
                                         <i className="bi bi-box-arrow-right me-2"></i>{" "}
                                         Log Out
