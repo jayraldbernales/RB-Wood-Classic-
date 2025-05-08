@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react";
+import { Link, router } from "@inertiajs/react";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import CartModal from "@/Pages/modals/CartModal ";
@@ -6,11 +6,17 @@ import CartModal from "@/Pages/modals/CartModal ";
 const Navbar = ({
     toggleSidebar,
     setShowLogoutModal,
-    searchTerm,
-    setSearchTerm,
+    searchTerm: initialSearchTerm = "",
+    setSearchTerm: externalSetSearchTerm,
 }) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
+    const [localSearchTerm, setLocalSearchTerm] = useState(initialSearchTerm);
+
+    // Sync local search term with external when it changes
+    useEffect(() => {
+        setLocalSearchTerm(initialSearchTerm);
+    }, [initialSearchTerm]);
 
     // Fetch Cart Items on Mount & Update
     const fetchCartItems = async () => {
@@ -19,11 +25,10 @@ const Navbar = ({
             setCartItems(response.data || []);
         } catch (error) {
             console.error("Error fetching cart items:", error);
-            setCartItems([]); // Set to empty if there's an error
+            setCartItems([]);
         }
     };
 
-    // Fetch cart items when the component mounts
     useEffect(() => {
         fetchCartItems();
     }, []);
@@ -31,7 +36,7 @@ const Navbar = ({
     const handleRemoveItem = async (cartItemId) => {
         try {
             await axios.delete(route("cart.destroy", { id: cartItemId }));
-            fetchCartItems(); // Refresh cart after removal
+            fetchCartItems();
         } catch (error) {
             console.error("Error removing item:", error);
         }
@@ -39,6 +44,14 @@ const Navbar = ({
 
     const handleCartClick = () => {
         setShowCartModal(true);
+    };
+
+    const handleSearchSubmit = (e) => {
+        e.preventDefault();
+        // Redirect to products page with search term
+        router.get(route("products.index"), {
+            search: localSearchTerm,
+        });
     };
 
     return (
@@ -62,32 +75,37 @@ const Navbar = ({
                         </button>
 
                         {/* Search Bar */}
-                        <div
-                            className="position-relative"
-                            style={{ maxWidth: "300px", width: "100%" }}
-                        >
-                            <input
-                                type="text"
-                                className="form-control bg-light text-dark px-5"
-                                placeholder="Search products..."
-                                aria-label="Search"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                style={{
-                                    paddingLeft: "40px",
-                                    height: "40px",
-                                    border: "1px solid #ddd",
-                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                                }}
-                            />
-                            <i
-                                className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
-                                style={{
-                                    fontSize: "1.2rem",
-                                    pointerEvents: "none",
-                                }}
-                            ></i>
-                        </div>
+                        <form onSubmit={handleSearchSubmit}>
+                            <div
+                                className="position-relative"
+                                style={{ maxWidth: "300px", width: "100%" }}
+                            >
+                                <input
+                                    type="text"
+                                    className="form-control bg-light text-dark px-5"
+                                    placeholder="Search products..."
+                                    aria-label="Search"
+                                    value={localSearchTerm}
+                                    onChange={(e) =>
+                                        setLocalSearchTerm(e.target.value)
+                                    }
+                                    style={{
+                                        paddingLeft: "40px",
+                                        height: "40px",
+                                        border: "1px solid #ddd",
+                                        boxShadow:
+                                            "0 2px 4px rgba(0, 0, 0, 0.1)",
+                                    }}
+                                />
+                                <i
+                                    className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
+                                    style={{
+                                        fontSize: "1.2rem",
+                                        pointerEvents: "none",
+                                    }}
+                                ></i>
+                            </div>
+                        </form>
                     </div>
 
                     {/* Right: Icons & User Menu */}
@@ -179,7 +197,7 @@ const Navbar = ({
                 onHide={() => setShowCartModal(false)}
                 cartItems={cartItems}
                 onRemoveItem={handleRemoveItem}
-                onCartUpdate={fetchCartItems} // Ensures cart updates are reflected
+                onCartUpdate={fetchCartItems}
             />
         </>
     );
