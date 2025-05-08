@@ -4,21 +4,21 @@ import axios from "axios";
 import CartModal from "@/Pages/modals/CartModal ";
 
 const Navbar = ({
-    toggleSidebar,
-    setShowLogoutModal,
-    searchTerm: initialSearchTerm = "",
-    setSearchTerm: externalSetSearchTerm,
+    toggleSidebar = () => {},
+    setShowLogoutModal = () => {},
+    searchTerm: propSearchTerm = "",
+    setSearchTerm = null,
 }) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
-    const [localSearchTerm, setLocalSearchTerm] = useState(initialSearchTerm);
+    const [localSearchTerm, setLocalSearchTerm] = useState(propSearchTerm);
 
-    // Sync local search term with external when it changes
+    // Sync local search term when prop changes
     useEffect(() => {
-        setLocalSearchTerm(initialSearchTerm);
-    }, [initialSearchTerm]);
+        setLocalSearchTerm(propSearchTerm);
+    }, [propSearchTerm]);
 
-    // Fetch Cart Items on Mount & Update
+    // Fetch cart items
     const fetchCartItems = async () => {
         try {
             const response = await axios.get(route("cart.index"));
@@ -46,25 +46,26 @@ const Navbar = ({
         setShowCartModal(true);
     };
 
-    const handleSearchSubmit = async (e) => {
-    e.preventDefault();
-    try {
-        await router.get(route("products.index"), {
-            search: localSearchTerm,
-        });
-    } catch (error) {
-        console.error("Error during search redirect:", error);
-    }
-};
+    const handleSearchChange = (e) => {
+        const value = e.target.value;
+        setLocalSearchTerm(value);
+        if (typeof setSearchTerm === "function") {
+            setSearchTerm(value);
+        }
+    };
 
+    const handleSearchSubmit = (e) => {
+        e.preventDefault();
+        if (typeof setSearchTerm !== "function") {
+            router.get(route("products.index"), { search: localSearchTerm });
+        }
+    };
 
     return (
         <>
             <nav className="navbar navbar-expand-lg navbar-light px-4 py-3 position-absolute top-0 start-0 w-100 custom-navbar">
                 <div className="container-fluid d-flex justify-content-between align-items-center">
-                    {/* Left: Sidebar Toggle & Search */}
                     <div className="d-flex align-items-center gap-3">
-                        {/* Sidebar Toggle Button */}
                         <button
                             className="btn p-2"
                             onClick={toggleSidebar}
@@ -78,7 +79,6 @@ const Navbar = ({
                             <i className="bi bi-list"></i>
                         </button>
 
-                        {/* Search Bar */}
                         <form onSubmit={handleSearchSubmit}>
                             <div
                                 className="position-relative"
@@ -90,9 +90,7 @@ const Navbar = ({
                                     placeholder="Search products..."
                                     aria-label="Search"
                                     value={localSearchTerm}
-                                    onChange={(e) =>
-                                        setLocalSearchTerm(e.target.value)
-                                    }
+                                    onChange={handleSearchChange}
                                     style={{
                                         paddingLeft: "40px",
                                         height: "40px",
@@ -112,9 +110,7 @@ const Navbar = ({
                         </form>
                     </div>
 
-                    {/* Right: Icons & User Menu */}
                     <div className="d-flex align-items-center gap-3">
-                        {/* Cart Button */}
                         <button
                             className="btn text-dark bg-white p-2 position-relative"
                             style={{ fontSize: "1.5rem" }}
@@ -151,7 +147,6 @@ const Navbar = ({
                             </button>
                         </a>
 
-                        {/* Profile Dropdown */}
                         <div className="dropdown">
                             <a
                                 href="#"
@@ -195,7 +190,6 @@ const Navbar = ({
                 </div>
             </nav>
 
-            {/* Cart Modal */}
             <CartModal
                 show={showCartModal}
                 onHide={() => setShowCartModal(false)}
