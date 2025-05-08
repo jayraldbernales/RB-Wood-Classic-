@@ -26,6 +26,7 @@
         "build": [
           "php artisan optimize:clear",
           "php artisan optimize",
+          "mkdir -p /data/products",
           "php artisan storage:link"
         ]
       },
