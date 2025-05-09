@@ -174,12 +174,15 @@ class PaymentController extends Controller
     {
         try {
             $checkoutSession = $payload['data']['attributes']['data'];
-            $paymentIntentId = $checkoutSession['attributes']['payment_intent_id']; // Changed from payments[0].id
+            
+            // Get payment intent ID from the FIRST payment object
+            $paymentIntentId = $checkoutSession['attributes']['payments'][0]['attributes']['payment_intent_id'];
+            
             $metadata = $checkoutSession['attributes']['metadata'] ?? [];
             
             Log::info('Processing checkout_session.completed', [
                 'payment_intent_id' => $paymentIntentId,
-                'metadata' => $metadata
+                'full_payload' => $checkoutSession // For debugging
             ]);
 
             return $this->processPayment($paymentIntentId, $metadata);
@@ -196,44 +199,45 @@ class PaymentController extends Controller
     protected function processPayment($paymentIntentId, $metadata)
     {
         try {
-            $paymentIntent = $this->paymongoService->retrievePaymentIntent($paymentIntentId);
+            $verification = $this->paymongoService->verifyPayment($paymentIntentId);
             
-            if (!$paymentIntent) {
-                Log::error("Payment intent not found", ['payment_intent_id' => $paymentIntentId]);
+            if (!$verification || !$verification['paid']) {
+                Log::warning("Payment not verified as paid", [
+                    'payment_intent_id' => $paymentIntentId,
+                    'verification' => $verification
+                ]);
                 return;
             }
-            
-            $status = $paymentIntent['attributes']['status'] ?? null;
-            $payments = $paymentIntent['attributes']['payments'] ?? [];
-            
-            if ($status !== 'succeeded' && !collect($payments)->contains(fn($p) => $p['attributes']['status'] === 'paid')) {
-                Log::warning("Payment not succeeded", ['status' => $status]);
-                return;
-            }
-            
-            $order = Order::where('paymongo_payment_intent_id', $paymentIntentId)->first();
-        
+
+            $order = Order::where('paymongo_payment_intent_id', $paymentIntentId)
+                        ->orWhere('id', $metadata['order_id'] ?? null)
+                        ->first();
+
             if (!$order) {
-                Log::error("Order not found for payment intent", ['payment_intent_id' => $paymentIntentId]);
+                Log::error("Order not found", [
+                    'payment_intent_id' => $paymentIntentId,
+                    'metadata' => $metadata
+                ]);
                 return;
             }
 
             $updateData = [
                 'payment_status' => 'paid',
-                'status' => ($metadata['payment_type'] ?? 'full') === 'full' ? 'processing' : 'partially_paid',
-                'paymongo_payment_method_id' => $payments[0]['attributes']['payment_method']['id'] ?? null
+                'status' => 'processing',
+                'paymongo_payment_method_id' => $verification['payment_method'] === 'gcash' 
+                    ? 'gcash' 
+                    : null
             ];
 
             $order->update($updateData);
 
-            event(new PaymentProcessed($order));
-
-            Log::info("Payment processed", [
-                'order_id' => $order->id,
+            Log::info("Order {$order->id} marked as paid", [
+                'method' => $verification['payment_method'],
                 'changes' => $updateData
             ]);
+
         } catch (\Exception $e) {
-            Log::error("Error processing payment", [
+            Log::error("Payment processing failed", [
                 'payment_intent_id' => $paymentIntentId,
                 'error' => $e->getMessage()
             ]);
