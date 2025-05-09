@@ -150,22 +150,10 @@ class PaymentController extends Controller
     protected function handlePaymentPaid($payload)
     {
         try {
-            Log::info('Full payment.paid payload', ['payload' => $payload]);
+            $payment = $payload['data']['attributes']['data'];
+            $paymentIntentId = $payment['attributes']['payment_intent_id'];
+            $metadata = $payment['attributes']['metadata'] ?? [];
             
-            // Updated payload parsing
-            $paymentIntentId = $payload['data']['attributes']['data']['attributes']['payment_intent_id'] 
-                ?? $payload['data']['relationships']['payment_intent']['data']['id']
-                ?? null;
-                
-            $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] 
-                ?? $payload['data']['attributes']['metadata']
-                ?? [];
-                
-            if (!$paymentIntentId) {
-                Log::error('Payment intent ID not found in webhook payload');
-                return response()->json(['error' => 'Payment intent ID missing'], 400);
-            }
-
             Log::info('Processing payment.paid event', [
                 'payment_intent_id' => $paymentIntentId,
                 'metadata' => $metadata
@@ -176,7 +164,6 @@ class PaymentController extends Controller
         } catch (\Exception $e) {
             Log::error('Error handling payment.paid', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'payload' => $payload
             ]);
             return response()->json(['error' => 'Processing failed'], 500);
