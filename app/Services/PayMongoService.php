@@ -187,18 +187,20 @@ class PayMongoService
 
     public function verifyPayment($paymentIntentId)
     {
-        try {
-            $response = Http::withBasicAuth($this->secretKey, '')
-                ->get("{$this->baseUrl}/payment_intents/{$paymentIntentId}");
-
-            if ($response->successful()) {
-                return $response->json()['data'];
-            }
-
-            return null;
-        } catch (\Exception $e) {
-            Log::error('Payment verification failed', ['error' => $e->getMessage()]);
+        $paymentIntent = $this->retrievePaymentIntent($paymentIntentId);
+        
+        if (!$paymentIntent) {
             return null;
         }
+
+        $status = $paymentIntent['attributes']['status'];
+        $payments = $paymentIntent['attributes']['payments'] ?? [];
+
+        return [
+            'status' => $status,
+            'paid' => $status === 'succeeded' || 
+                    collect($payments)->contains(fn($p) => $p['attributes']['status'] === 'paid'),
+            'payment_method' => $payments[0]['attributes']['payment_method']['type'] ?? null
+        ];
     }
 }
