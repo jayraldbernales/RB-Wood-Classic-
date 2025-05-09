@@ -7,7 +7,7 @@ const Navbar = ({
     toggleSidebar,
     setShowLogoutModal,
     searchTerm: initialSearchTerm = "",
-    setSearchTerm: externalSetSearchTerm,
+    setSearchTerm: externalSetSearchTerm = null,
 }) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
@@ -37,7 +37,10 @@ const Navbar = ({
 
     // Sync local search term with parent component if on products page
     useEffect(() => {
-        if (externalSetSearchTerm) {
+        if (
+            externalSetSearchTerm &&
+            typeof externalSetSearchTerm === "function"
+        ) {
             externalSetSearchTerm(localSearchTerm);
         }
     }, [localSearchTerm, externalSetSearchTerm]);
