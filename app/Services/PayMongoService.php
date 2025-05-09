@@ -193,27 +193,28 @@ class PayMongoService
             Log::error("Payment intent retrieval failed", ['id' => $paymentIntentId]);
             return null;
         }
-
+    
         $status = $paymentIntent['attributes']['status'];
         $payments = $paymentIntent['attributes']['payments'] ?? [];
-
-        // Special handling for GCash statuses
-        $paid = in_array($status, ['succeeded', 'paid']) || 
+    
+        // Expanded status check for GCash
+        $paid = in_array($status, ['succeeded', 'paid', 'awaiting_next_action']) || 
             collect($payments)->contains(function($payment) {
                 return in_array($payment['attributes']['status'] ?? null, [
                     'paid', 
                     'succeeded',
-                    'awaiting_fulfillment'
+                    'awaiting_fulfillment',
+                    'processing'
                 ]);
             });
-
+    
         Log::debug('Payment verification', [
             'intent_id' => $paymentIntentId,
             'status' => $status,
             'payments' => collect($payments)->pluck('attributes.status'),
             'result' => $paid ? 'PAID' : 'NOT_PAID'
         ]);
-
+    
         return [
             'status' => $status,
             'paid' => $paid,
