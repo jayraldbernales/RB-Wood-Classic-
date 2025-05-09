@@ -52,7 +52,7 @@ class OrderController extends Controller
             'message' => 'nullable|string',
             'payment_method' => 'required|in:card,gcash,grab_pay,paymaya,inperson',
             'payment_type' => 'required|in:full,downpayment',
-            'paymongo_payment_intent_id' => 'nullable|string',
+            'paymongo_payment_intent_id' => 'required|string',
             'is_paid' => 'sometimes|boolean'
         ]);
         
