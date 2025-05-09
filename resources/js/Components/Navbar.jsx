@@ -1,29 +1,34 @@
 import { Link } from "@inertiajs/react";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import CartModal from "@/Pages/modals/CartModal ";
+import CartModal from "@/Pages/modals/CartModal";
 
 const Navbar = ({
     toggleSidebar,
     setShowLogoutModal,
-    searchTerm,
-    setSearchTerm,
+    searchTerm = "",
+    setSearchTerm = () => {}, // Default empty function
 }) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
+    const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
 
-    // Fetch Cart Items on Mount & Update
+    // Sync local search term with prop
+    useEffect(() => {
+        setLocalSearchTerm(searchTerm);
+    }, [searchTerm]);
+
+    // Fetch Cart Items
     const fetchCartItems = async () => {
         try {
             const response = await axios.get(route("cart.index"));
             setCartItems(response.data || []);
         } catch (error) {
             console.error("Error fetching cart items:", error);
-            setCartItems([]); // Set to empty if there's an error
+            setCartItems([]);
         }
     };
 
-    // Fetch cart items when the component mounts
     useEffect(() => {
         fetchCartItems();
     }, []);
@@ -31,23 +36,28 @@ const Navbar = ({
     const handleRemoveItem = async (cartItemId) => {
         try {
             await axios.delete(route("cart.destroy", { id: cartItemId }));
-            fetchCartItems(); // Refresh cart after removal
+            fetchCartItems();
         } catch (error) {
             console.error("Error removing item:", error);
         }
     };
 
-    const handleCartClick = () => {
-        setShowCartModal(true);
+    // Safe search handler
+    const handleSearchChange = (e) => {
+        const value = e.target.value;
+        setLocalSearchTerm(value);
+        try {
+            setSearchTerm(value);
+        } catch (err) {
+            console.error("Search handler error:", err);
+        }
     };
 
     return (
         <>
             <nav className="navbar navbar-expand-lg navbar-light px-4 py-3 position-absolute top-0 start-0 w-100 custom-navbar">
                 <div className="container-fluid d-flex justify-content-between align-items-center">
-                    {/* Left: Sidebar Toggle & Search */}
                     <div className="d-flex align-items-center gap-3">
-                        {/* Sidebar Toggle Button */}
                         <button
                             className="btn p-2"
                             onClick={toggleSidebar}
@@ -61,7 +71,7 @@ const Navbar = ({
                             <i className="bi bi-list"></i>
                         </button>
 
-                        {/* Search Bar */}
+                        {/* Updated Search Bar */}
                         <div
                             className="position-relative"
                             style={{ maxWidth: "300px", width: "100%" }}
@@ -71,8 +81,8 @@ const Navbar = ({
                                 className="form-control bg-light text-dark px-5"
                                 placeholder="Search products..."
                                 aria-label="Search"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                value={localSearchTerm}
+                                onChange={handleSearchChange}
                                 style={{
                                     paddingLeft: "40px",
                                     height: "40px",
@@ -90,13 +100,11 @@ const Navbar = ({
                         </div>
                     </div>
 
-                    {/* Right: Icons & User Menu */}
                     <div className="d-flex align-items-center gap-3">
-                        {/* Cart Button */}
                         <button
                             className="btn text-dark bg-white p-2 position-relative"
                             style={{ fontSize: "1.5rem" }}
-                            onClick={handleCartClick}
+                            onClick={() => setShowCartModal(true)}
                         >
                             <i className="bi bi-cart-plus"></i>
                             {cartItems.length > 0 && (
@@ -129,7 +137,6 @@ const Navbar = ({
                             </button>
                         </a>
 
-                        {/* Profile Dropdown */}
                         <div className="dropdown">
                             <a
                                 href="#"
@@ -150,7 +157,7 @@ const Navbar = ({
                                         className="dropdown-item"
                                         href={route("settings.edit")}
                                     >
-                                        <i className="bi bi-person me-2"></i>{" "}
+                                        <i className="bi bi-person me-2"></i>
                                         Profile
                                     </Link>
                                 </li>
@@ -163,7 +170,7 @@ const Navbar = ({
                                         href="#"
                                         onClick={() => setShowLogoutModal(true)}
                                     >
-                                        <i className="bi bi-box-arrow-right me-2"></i>{" "}
+                                        <i className="bi bi-box-arrow-right me-2"></i>
                                         Log Out
                                     </a>
                                 </li>
@@ -173,13 +180,12 @@ const Navbar = ({
                 </div>
             </nav>
 
-            {/* Cart Modal */}
             <CartModal
                 show={showCartModal}
                 onHide={() => setShowCartModal(false)}
                 cartItems={cartItems}
                 onRemoveItem={handleRemoveItem}
-                onCartUpdate={fetchCartItems} // Ensures cart updates are reflected
+                onCartUpdate={fetchCartItems}
             />
         </>
     );
