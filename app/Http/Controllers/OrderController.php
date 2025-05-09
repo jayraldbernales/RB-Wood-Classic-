@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Cart;
+use App\Services\PayMongoService;
 use Inertia\Inertia;
 
 class OrderController extends Controller
@@ -49,6 +50,7 @@ class OrderController extends Controller
         'down_payment_amount' => 'required|numeric',
         'message' => 'nullable|string',
         'payment_method' => 'required|in:card,gcash,grab_pay,paymaya,inperson',
+        'payment_type' => 'required|in:full,downpayment',
         'paymongo_payment_intent_id' => 'nullable|string',
         'is_paid' => 'sometimes|boolean'
     ]);
@@ -120,48 +122,33 @@ class OrderController extends Controller
 
 
     
-public function confirmation(Request $request)
-{
-    // Check for order ID in URL or session
-    $order = null;
-    
-    if ($request->has('order')) {
-        $order = Order::with('items.product')->find($request->input('order'));
-    } elseif (session()->has('order')) {
-        $order = Order::with('items.product')->find(session('order')->id);
-    }
+    public function confirmation(Request $request)
+    {
+        $order = $request->has('order') 
+            ? Order::with('items.product')->find($request->input('order'))
+            : (session()->has('order') ? Order::with('items.product')->find(session('order')->id) : null);
 
-    // If no order found, redirect to home with error
-    if (!$order) {
-        return redirect('Orders/Failed')->with('error', 'Order not found');
-    }
+        if (!$order) {
+            return redirect('Orders/Failed')->with('error', 'Order not found');
+        }
 
-    // Update payment status if paymongo_payment_intent_id exists
-    if ($order->paymongo_payment_intent_id) {
-        $paymongoService = app(\App\Services\PayMongoService::class);
-        $paymentIntent = $paymongoService->retrievePaymentIntent($order->paymongo_payment_intent_id);
-
-        if ($paymentIntent) {
-            $status = $paymentIntent['attributes']['status'] ?? null;
-            $payments = $paymentIntent['attributes']['payments'] ?? [];
-
-            if ($status === 'succeeded' || collect($payments)->contains(fn($p) => $p['attributes']['status'] === 'succeeded')) {
-                $order->payment_status = 'paid';
-                $order->status = 'processing';
-                $order->save();
-            } elseif ($status === 'pending') {
-                $order->payment_status = 'pending_payment';
-                $order->status = 'pending';
-                $order->save();
+        if ($order->paymongo_payment_intent_id) {
+            $verification = app(PayMongoService::class)->verifyPayment($order->paymongo_payment_intent_id);
+            
+            if ($verification) {
+                $order->update([
+                    'payment_status' => $verification['paid'] ? 'paid' : 'pending_payment',
+                    'status' => $verification['paid'] ? 'processing' : 'pending',
+                    'paid_at' => $verification['paid'] ? now() : null
+                ]);
             }
         }
-    }
 
-    return inertia('Orders/Confirmation', [
-        'order' => $order,
-        'auth' => ['user' => auth()->user()]
-    ]);
-}
+        return inertia('Orders/Confirmation', [
+            'order' => $order,
+            'auth' => ['user' => auth()->user()]
+        ]);
+    }
 
     public function cancel(Order $order)
     {
