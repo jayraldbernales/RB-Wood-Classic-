@@ -57,9 +57,6 @@ class OrderController extends Controller
         ]);
         
         try {
-            $paymentType = $validated['payment_type'] ?? 'full';
-            $isPaid = $validated['is_paid'] ?? false;
-
             $orderData = [
                 'user_id' => auth()->id(),
                 'total_amount' => $validated['total_amount'],
@@ -68,8 +65,8 @@ class OrderController extends Controller
                 'message' => $validated['message'],
                 'payment_method' => $validated['payment_method'],
                 'paymongo_payment_intent_id' => $validated['paymongo_payment_intent_id'] ?? null,
-                'payment_status' => $isPaid ? 'paid' : ($validated['payment_method'] === 'inperson' ? 'unpaid' : 'pending_payment'),
-                'status' => $isPaid ? 'processing' : 'pending'
+                'payment_status' => $validated['is_paid'] ? 'paid' : ($validated['payment_method'] === 'inperson' ? 'unpaid' : 'pending_payment'),
+                'status' => $validated['is_paid'] ? 'processing' : 'pending'
             ];
 
             $order = Order::create($orderData);
@@ -90,14 +87,17 @@ class OrderController extends Controller
                     ->delete();
             }
 
-            return $request->expectsJson() 
-                ? response()->json(['order' => $order], 201)
-                : redirect()->route('orders.confirmation', ['order' => $order->id]);
+            return response()->json([
+                'order' => [
+                    'id' => $order->id,
+                    'total_amount' => $order->total_amount,
+                    'payment_status' => $order->payment_status,
+                    'paymongo_payment_intent_id' => $order->paymongo_payment_intent_id
+                ]
+            ], 201);
             
         } catch (\Exception $e) {
-            return $request->expectsJson()
-                ? response()->json(['error' => $e->getMessage()], 500)
-                : back()->with('error', $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
     
