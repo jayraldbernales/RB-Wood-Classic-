@@ -118,97 +118,122 @@ class PaymentController extends Controller
         ]);
     }
 
+
     public function handleWebhook(Request $request)
     {
         $payload = $request->all();
         
-        // Verify webhook signature
+        // Add detailed logging
+        Log::info('Webhook received', ['payload' => $payload]);
+
         if (!$this->paymongoService->verifyWebhookSignature($request)) {
-            Log::error('Invalid webhook signature');
+            Log::error('Invalid webhook signature', ['headers' => $request->headers->all()]);
             return response()->json(['error' => 'Invalid signature'], 403);
         }
 
         $eventType = $payload['data']['attributes']['type'];
-        
-        if ($eventType === 'checkout_session.completed') {
-            $checkoutSession = $payload['data']['attributes'];
-            $paymentIntentId = $checkoutSession['payments'][0]['id'];
-            $metadata = $checkoutSession['metadata'] ?? [];
-            
-            $this->processPayment($paymentIntentId, $metadata);
+        Log::info("Processing event: $eventType");
+
+        switch ($eventType) {
+            case 'payment.paid':
+                return $this->handlePaymentPaid($payload);
+                
+            case 'checkout_session.completed':
+                return $this->handleCheckoutSessionCompleted($payload);
+                
+            default:
+                Log::info("Unhandled event type", ['type' => $eventType]);
+                return response()->json(['status' => 'ignored']);
         }
-        
-        // Handle other event types as needed
-
-        return response()->json(['status' => 'success']);
     }
 
-    protected function handlePaymentPaid(Request $request)
+    protected function handlePaymentPaid($payload)
     {
-        $payment = $request->input('data.attributes.data');
-        $paymentIntentId = $payment['attributes']['payment_intent_id'];
-        $metadata = $payment['attributes']['metadata'] ?? [];
+        try {
+            $payment = $payload['data']['attributes']['data'];
+            $paymentIntentId = $payment['attributes']['payment_intent_id'];
+            $metadata = $payment['attributes']['metadata'] ?? [];
+            
+            Log::info('Processing payment.paid event', [
+                'payment_intent_id' => $paymentIntentId,
+                'metadata' => $metadata
+            ]);
 
-        // Process your payment here
-        $this->processPayment($paymentIntentId, $metadata);
-
-        return response()->json(['status' => 'success']);
+            return $this->processPayment($paymentIntentId, $metadata);
+            
+        } catch (\Exception $e) {
+            Log::error('Error handling payment.paid', [
+                'error' => $e->getMessage(),
+                'payload' => $payload
+            ]);
+            return response()->json(['error' => 'Processing failed'], 500);
+        }
     }
 
-    protected function handleCheckoutSessionCompleted(Request $request)
+    protected function handleCheckoutSessionCompleted($payload)
     {
-        $checkoutSession = $request->input('data.attributes.data');
-        $paymentIntentId = $checkoutSession['attributes']['payments'][0]['id'];
-        $metadata = $checkoutSession['attributes']['metadata'] ?? [];
+        try {
+            $checkoutSession = $payload['data']['attributes']['data'];
+            $paymentIntentId = $checkoutSession['attributes']['payments'][0]['id'];
+            $metadata = $checkoutSession['attributes']['metadata'] ?? [];
+            
+            Log::info('Processing checkout_session.completed', [
+                'payment_intent_id' => $paymentIntentId,
+                'metadata' => $metadata
+            ]);
 
-        // Process your payment here
-        $this->processPayment($paymentIntentId, $metadata);
-
-        return response()->json(['status' => 'success']);
+            return $this->processPayment($paymentIntentId, $metadata);
+            
+        } catch (\Exception $e) {
+            Log::error('Error handling checkout_session.completed', [
+                'error' => $e->getMessage(),
+                'payload' => $payload
+            ]);
+            return response()->json(['error' => 'Processing failed'], 500);
+        }
     }
 
     protected function processPayment($paymentIntentId, $metadata)
     {
         try {
-            $paymentType = $metadata['payment_type'] ?? 'full';
-
-            // Default to pending_payment
-            $paymentStatus = 'pending_payment';
-            $orderStatus = 'pending';
-
-            // Check payment status from PayMongo (assumed succeeded if this method is called)
-            // Adjust payment status based on payment type
-            if ($paymentType === 'full') {
-                $paymentStatus = 'paid';
-                $orderStatus = 'paid';
-            } elseif ($paymentType === 'downpayment') {
-                $paymentStatus = 'partially_paid';
-                $orderStatus = 'processing';
+            // Retrieve the payment intent to verify status
+            $paymentIntent = $this->paymongoService->retrievePaymentIntent($paymentIntentId);
+            
+            if (!$paymentIntent) {
+                Log::error("Payment intent not found", ['payment_intent_id' => $paymentIntentId]);
+                return;
+            }
+            
+            $status = $paymentIntent['attributes']['status'] ?? null;
+            $payments = $paymentIntent['attributes']['payments'] ?? [];
+            
+            // Only proceed if payment is actually successful
+            if ($status !== 'succeeded' && !collect($payments)->contains(fn($p) => $p['attributes']['status'] === 'paid')) {
+                Log::warning("Payment not succeeded", ['status' => $status]);
+                return;
+            }
+            
+            $order = Order::where('payment_intent_id', $paymentIntentId)->first();
+        
+            if (!$order) {
+                Log::error("Order not found for payment intent", ['payment_intent_id' => $paymentIntentId]);
+                return;
             }
 
-            $order = Order::firstOrCreate(
-                ['payment_intent_id' => $paymentIntentId],
-                [
-                    'user_id' => $metadata['user_id'] ?? null,
-                    'amount' => $metadata['amount'] ?? 0,
-                    'payment_type' => $paymentType,
-                    'payment_status' => $paymentStatus,
-                    'status' => $orderStatus,
-                ]
-            );
-
+            $paymentType = $metadata['payment_type'] ?? 'full';
+            
             $order->update([
-                'payment_status' => $paymentStatus,
-                'status' => $orderStatus,
+                'payment_status' => 'paid',
+                'status' => $paymentType === 'full' ? 'processing' : 'partially_paid',
+                'paid_at' => now()
             ]);
 
             event(new PaymentProcessed($order));
 
-            Log::info("Payment processed successfully", [
+            Log::info("Payment processed", [
                 'order_id' => $order->id,
                 'payment_intent_id' => $paymentIntentId
             ]);
-
         } catch (\Exception $e) {
             Log::error("Error processing payment", [
                 'payment_intent_id' => $paymentIntentId,
