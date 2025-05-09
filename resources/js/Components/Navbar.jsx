@@ -7,7 +7,7 @@ const Navbar = ({
     toggleSidebar,
     setShowLogoutModal,
     searchTerm: initialSearchTerm = "",
-    setSearchTerm: externalSetSearchTerm = null,
+    setSearchTerm: externalSetSearchTerm,
 }) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
@@ -16,12 +16,7 @@ const Navbar = ({
     // Handle search submission
     const handleSearchSubmit = (e) => {
         e.preventDefault();
-        
-        // If on Products page (has external control), let parent handle it
-        if (typeof externalSetSearchTerm === 'function') {
-            return; // Parent component handles the search
-        }
-        // Otherwise, navigate to products page with search term
+        // Redirect to products page with search term
         router.get(route("products.index"), { search: localSearchTerm });
     };
 
@@ -42,7 +37,7 @@ const Navbar = ({
 
     // Sync local search term with parent component if on products page
     useEffect(() => {
-        if (typeof externalSetSearchTerm === 'function') {
+        if (externalSetSearchTerm) {
             externalSetSearchTerm(localSearchTerm);
         }
     }, [localSearchTerm, externalSetSearchTerm]);
@@ -80,41 +75,49 @@ const Navbar = ({
                             <i className="bi bi-list"></i>
                         </button>
 
-                        {/* Search Form - Only show if search is supported */}
-                        {typeof externalSetSearchTerm === 'function' || (
-                            <form
-                                onSubmit={handleSearchSubmit}
-                                className="position-relative"
-                                style={{ maxWidth: "300px", width: "100%" }}
+                        {/* Search Form - Global with safe handling */}
+                        <form
+                            onSubmit={handleSearchSubmit}
+                            className="position-relative"
+                            style={{ maxWidth: "300px", width: "100%" }}
+                        >
+                            <input
+                                type="text"
+                                className="form-control bg-light text-dark px-5"
+                                placeholder="Search products..."
+                                aria-label="Search"
+                                value={localSearchTerm}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setLocalSearchTerm(value);
+                                    // Only call external setter if it exists and is a function
+                                    if (
+                                        typeof externalSetSearchTerm ===
+                                        "function"
+                                    ) {
+                                        externalSetSearchTerm(value);
+                                    }
+                                }}
+                                style={{
+                                    paddingLeft: "40px",
+                                    height: "40px",
+                                    border: "1px solid #ddd",
+                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                                }}
+                            />
+                            <button
+                                type="submit"
+                                className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
+                                style={{
+                                    fontSize: "1.2rem",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                }}
                             >
-                                <input
-                                    type="text"
-                                    className="form-control bg-light text-dark px-5"
-                                    placeholder="Search products..."
-                                    aria-label="Search"
-                                    value={localSearchTerm}
-                                    onChange={(e) => setLocalSearchTerm(e.target.value)}
-                                    style={{
-                                        paddingLeft: "40px",
-                                        height: "40px",
-                                        border: "1px solid #ddd",
-                                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                                    }}
-                                />
-                                <button
-                                    type="submit"
-                                    className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
-                                    style={{
-                                        fontSize: "1.2rem",
-                                        background: "none",
-                                        border: "none",
-                                        cursor: "pointer",
-                                    }}
-                                >
-                                    <i className="bi bi-search"></i>
-                                </button>
-                            </form>
-                        )}
+                                <i className="bi bi-search"></i>
+                            </button>
+                        </form>
                     </div>
 
                     {/* Right: Icons & User Menu */}
