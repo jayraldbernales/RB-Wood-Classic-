@@ -2,7 +2,9 @@ import React from "react";
 import { Link, usePage } from "@inertiajs/react"; // Import usePage
 
 const Sidebar = ({ sidebarOpen }) => {
-    const { url } = usePage(); // Get current route from Inertia
+    const page = usePage();
+    const url = page?.url || "";
+
 
     return (
         <div
