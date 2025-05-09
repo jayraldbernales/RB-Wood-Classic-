@@ -1,7 +1,7 @@
 import { Link } from "@inertiajs/react";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import CartModal from "@/Pages/modals/CartModal";
+import CartModal from "@/Pages/modals/CartModal ";
 
 const Navbar = ({
     toggleSidebar,
