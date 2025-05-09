@@ -219,54 +219,41 @@ class PaymentController extends Controller
                     'payment_intent_id' => $paymentIntentId,
                     'verification' => $verification
                 ]);
-                return response()->json(['status' => 'not_paid']);
+                return;
             }
 
-            // Try multiple ways to find the order
             $order = Order::where('paymongo_payment_intent_id', $paymentIntentId)
                         ->orWhere('id', $metadata['order_id'] ?? null)
-                        ->orWhere(function($query) use ($metadata) {
-                            if (isset($metadata['reference_number'])) {
-                                $query->where('id', $metadata['reference_number']);
-                            }
-                        })
                         ->first();
 
             if (!$order) {
                 Log::error("Order not found", [
                     'payment_intent_id' => $paymentIntentId,
-                    'metadata' => $metadata,
-                    'possible_orders' => Order::where('payment_status', 'pending_payment')
-                        ->limit(10)
-                        ->get()
-                        ->toArray()
+                    'metadata' => $metadata
                 ]);
-                return response()->json(['error' => 'Order not found'], 404);
+                return;
             }
 
             $updateData = [
                 'payment_status' => 'paid',
                 'status' => 'processing',
-                'paymongo_payment_method_id' => $verification['payment_method'] ?? null
+                'paymongo_payment_method_id' => $verification['payment_method'] === 'gcash' 
+                    ? 'gcash' 
+                    : null
             ];
 
             $order->update($updateData);
 
             Log::info("Order {$order->id} marked as paid", [
                 'method' => $verification['payment_method'],
-                'changes' => $updateData,
-                'previous_status' => $order->getOriginal('payment_status')
+                'changes' => $updateData
             ]);
-
-            return response()->json(['status' => 'success']);
 
         } catch (\Exception $e) {
             Log::error("Payment processing failed", [
                 'payment_intent_id' => $paymentIntentId,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => $e->getMessage()
             ]);
-            return response()->json(['error' => 'Processing failed'], 500);
         }
     }
 }
