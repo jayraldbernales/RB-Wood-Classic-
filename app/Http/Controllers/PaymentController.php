@@ -174,7 +174,7 @@ class PaymentController extends Controller
     {
         try {
             $checkoutSession = $payload['data']['attributes']['data'];
-            $paymentIntentId = $checkoutSession['attributes']['payments'][0]['id'];
+            $paymentIntentId = $checkoutSession['attributes']['payment_intent_id']; // Changed from payments[0].id
             $metadata = $checkoutSession['attributes']['metadata'] ?? [];
             
             Log::info('Processing checkout_session.completed', [
@@ -196,7 +196,6 @@ class PaymentController extends Controller
     protected function processPayment($paymentIntentId, $metadata)
     {
         try {
-            // Retrieve the payment intent to verify status
             $paymentIntent = $this->paymongoService->retrievePaymentIntent($paymentIntentId);
             
             if (!$paymentIntent) {
@@ -207,41 +206,37 @@ class PaymentController extends Controller
             $status = $paymentIntent['attributes']['status'] ?? null;
             $payments = $paymentIntent['attributes']['payments'] ?? [];
             
-            // Only proceed if payment is actually successful
             if ($status !== 'succeeded' && !collect($payments)->contains(fn($p) => $p['attributes']['status'] === 'paid')) {
                 Log::warning("Payment not succeeded", ['status' => $status]);
                 return;
             }
             
-            $order = Order::where('payment_intent_id', $paymentIntentId)->first();
+            $order = Order::where('paymongo_payment_intent_id', $paymentIntentId)->first();
         
             if (!$order) {
                 Log::error("Order not found for payment intent", ['payment_intent_id' => $paymentIntentId]);
                 return;
             }
 
-            $paymentType = $metadata['payment_type'] ?? 'full';
-            
-            $order->update([
+            $updateData = [
                 'payment_status' => 'paid',
-                'status' => $paymentType === 'full' ? 'processing' : 'partially_paid',
-                'paid_at' => now()
-            ]);
+                'status' => ($metadata['payment_type'] ?? 'full') === 'full' ? 'processing' : 'partially_paid',
+                'paymongo_payment_method_id' => $payments[0]['attributes']['payment_method']['id'] ?? null
+            ];
+
+            $order->update($updateData);
 
             event(new PaymentProcessed($order));
 
             Log::info("Payment processed", [
                 'order_id' => $order->id,
-                'payment_intent_id' => $paymentIntentId
+                'changes' => $updateData
             ]);
         } catch (\Exception $e) {
             Log::error("Error processing payment", [
                 'payment_intent_id' => $paymentIntentId,
-                'error' => $e->getMessage(),
-                'metadata' => $metadata
+                'error' => $e->getMessage()
             ]);
         }
     }
-
-
 }
