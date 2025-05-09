@@ -3,24 +3,33 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import CartModal from "@/Pages/modals/CartModal ";
 
-const Navbar = (props) => {
-    const {
-        toggleSidebar = () => console.log("toggleSidebar not provided"),
-        setShowLogoutModal = () =>
-            console.log("setShowLogoutModal not provided"),
-        searchTerm: propSearchTerm = "",
-        setSearchTerm = () => {}, // Ensure this is always a function
-    } = props;
-
+const Navbar = ({
+    toggleSidebar,
+    setShowLogoutModal,
+    searchTerm = "",
+    setSearchTerm,
+}) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
-    const [searchInput, setSearchInput] = useState(propSearchTerm);
+    const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
 
-    // Sync with prop when it changes
+    // Handle search - redirect to products page if not already there
+    const handleSearch = (e) => {
+        e.preventDefault();
+        if (!window.location.pathname.includes("/products")) {
+            router.get(route("products.index"), { search: localSearchTerm });
+        } else {
+            // If already on products page, just update the search
+            setSearchTerm?.(localSearchTerm);
+        }
+    };
+
+    // Sync with parent component's search term
     useEffect(() => {
-        setSearchInput(propSearchTerm);
-    }, [propSearchTerm]);
+        setLocalSearchTerm(searchTerm);
+    }, [searchTerm]);
 
+    // Rest of your existing code remains exactly the same...
     const fetchCartItems = async () => {
         try {
             const response = await axios.get(route("cart.index"));
@@ -48,21 +57,6 @@ const Navbar = (props) => {
         setShowCartModal(true);
     };
 
-    const handleSearchChange = (e) => {
-        const value = e.target.value;
-        setSearchInput(value);
-    };
-
-    const handleSearchSubmit = (e) => {
-        e.preventDefault();
-
-        // Always use router to navigate to products page with search parameter
-        router.get(route("products.index"), { search: searchInput });
-        
-        // Also call setSearchTerm if it's available on the current page
-        setSearchTerm(searchInput);
-    };
-
     return (
         <>
             <nav className="navbar navbar-expand-lg navbar-light px-4 py-3 position-absolute top-0 start-0 w-100 custom-navbar">
@@ -81,37 +75,44 @@ const Navbar = (props) => {
                             <i className="bi bi-list"></i>
                         </button>
 
-                        <form onSubmit={handleSearchSubmit}>
-                            <div
-                                className="position-relative"
-                                style={{ maxWidth: "300px", width: "100%" }}
+                        {/* Modified Search Form */}
+                        <form
+                            onSubmit={handleSearch}
+                            className="position-relative"
+                            style={{ maxWidth: "300px", width: "100%" }}
+                        >
+                            <input
+                                type="text"
+                                className="form-control bg-light text-dark px-5"
+                                placeholder="Search products..."
+                                aria-label="Search"
+                                value={localSearchTerm}
+                                onChange={(e) =>
+                                    setLocalSearchTerm(e.target.value)
+                                }
+                                style={{
+                                    paddingLeft: "40px",
+                                    height: "40px",
+                                    border: "1px solid #ddd",
+                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                                }}
+                            />
+                            <button
+                                type="submit"
+                                className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
+                                style={{
+                                    fontSize: "1.2rem",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                }}
                             >
-                                <input
-                                    type="text"
-                                    className="form-control bg-light text-dark px-5"
-                                    placeholder="Search products..."
-                                    aria-label="Search"
-                                    value={searchInput}
-                                    onChange={handleSearchChange}
-                                    style={{
-                                        paddingLeft: "40px",
-                                        height: "40px",
-                                        border: "1px solid #ddd",
-                                        boxShadow:
-                                            "0 2px 4px rgba(0, 0, 0, 0.1)",
-                                    }}
-                                />
-                                <i
-                                    className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
-                                    style={{
-                                        fontSize: "1.2rem",
-                                        pointerEvents: "none",
-                                    }}
-                                ></i>
-                            </div>
+                                <i className="bi bi-search"></i>
+                            </button>
                         </form>
                     </div>
 
+                    {/* Rest of your navbar remains exactly the same */}
                     <div className="d-flex align-items-center gap-3">
                         <button
                             className="btn text-dark bg-white p-2 position-relative"
@@ -180,10 +181,7 @@ const Navbar = (props) => {
                                     <a
                                         className="dropdown-item"
                                         href="#"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            setShowLogoutModal(true);
-                                        }}
+                                        onClick={() => setShowLogoutModal(true)}
                                     >
                                         <i className="bi bi-box-arrow-right me-2"></i>{" "}
                                         Log Out
