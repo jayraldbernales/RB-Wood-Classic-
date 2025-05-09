@@ -72,7 +72,7 @@ const Navbar = ({
                                 placeholder="Search products..."
                                 aria-label="Search"
                                 value={searchTerm}
-                               
+                                onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{
                                     paddingLeft: "40px",
                                     height: "40px",
