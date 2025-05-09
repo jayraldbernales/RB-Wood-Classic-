@@ -1,16 +1,24 @@
-import { Link } from "@inertiajs/react";
+import { Link, router } from "@inertiajs/react";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import CartModal from "@/Pages/modals/CartModal ";
+import CartModal from "@/Pages/modals/CartModal";
 
 const Navbar = ({
     toggleSidebar,
     setShowLogoutModal,
-    searchTerm,
-    setSearchTerm,
+    searchTerm: initialSearchTerm = "",
+    setSearchTerm: externalSetSearchTerm,
 }) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
+    const [localSearchTerm, setLocalSearchTerm] = useState(initialSearchTerm);
+
+    // Handle search submission
+    const handleSearchSubmit = (e) => {
+        e.preventDefault();
+        // Redirect to products page with search term
+        router.get(route("products.index"), { search: localSearchTerm });
+    };
 
     // Fetch Cart Items on Mount & Update
     const fetchCartItems = async () => {
@@ -19,19 +27,25 @@ const Navbar = ({
             setCartItems(response.data || []);
         } catch (error) {
             console.error("Error fetching cart items:", error);
-            setCartItems([]); // Set to empty if there's an error
+            setCartItems([]);
         }
     };
 
-    // Fetch cart items when the component mounts
     useEffect(() => {
         fetchCartItems();
     }, []);
 
+    // Sync local search term with parent component if on products page
+    useEffect(() => {
+        if (externalSetSearchTerm) {
+            externalSetSearchTerm(localSearchTerm);
+        }
+    }, [localSearchTerm, externalSetSearchTerm]);
+
     const handleRemoveItem = async (cartItemId) => {
         try {
             await axios.delete(route("cart.destroy", { id: cartItemId }));
-            fetchCartItems(); // Refresh cart after removal
+            fetchCartItems();
         } catch (error) {
             console.error("Error removing item:", error);
         }
@@ -61,8 +75,9 @@ const Navbar = ({
                             <i className="bi bi-list"></i>
                         </button>
 
-                        {/* Search Bar */}
-                        <div
+                        {/* Search Form */}
+                        <form
+                            onSubmit={handleSearchSubmit}
                             className="position-relative"
                             style={{ maxWidth: "300px", width: "100%" }}
                         >
@@ -71,8 +86,10 @@ const Navbar = ({
                                 className="form-control bg-light text-dark px-5"
                                 placeholder="Search products..."
                                 aria-label="Search"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                value={localSearchTerm}
+                                onChange={(e) =>
+                                    setLocalSearchTerm(e.target.value)
+                                }
                                 style={{
                                     paddingLeft: "40px",
                                     height: "40px",
@@ -80,14 +97,19 @@ const Navbar = ({
                                     boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
                                 }}
                             />
-                            <i
-                                className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
+                            <button
+                                type="submit"
+                                className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
                                 style={{
                                     fontSize: "1.2rem",
-                                    pointerEvents: "none",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
                                 }}
-                            ></i>
-                        </div>
+                            >
+                                <i className="bi bi-search"></i>
+                            </button>
+                        </form>
                     </div>
 
                     {/* Right: Icons & User Menu */}
@@ -179,7 +201,7 @@ const Navbar = ({
                 onHide={() => setShowCartModal(false)}
                 cartItems={cartItems}
                 onRemoveItem={handleRemoveItem}
-                onCartUpdate={fetchCartItems} // Ensures cart updates are reflected
+                onCartUpdate={fetchCartItems}
             />
         </>
     );
