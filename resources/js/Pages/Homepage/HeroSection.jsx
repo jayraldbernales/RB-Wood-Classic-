@@ -66,6 +66,8 @@ export default function HeroSection({ popularProducts }) {
                     <Navbar
                         toggleSidebar={toggleSidebar}
                         setShowLogoutModal={setShowLogoutModal}
+                        searchTerm=""
+                        setSearchTerm={() => {}}
                     />
 
                     {/* Container */}
