@@ -48,17 +48,37 @@ const Checkout = ({ cartItems, total, auth }) => {
         setPaymentError(null);
 
         try {
-            const paymentAmount =
-                data.payment_type === "full" ? total : total * 0.5;
+            const paymentAmount = data.payment_type === "full" ? total : total * 0.5;
 
-            // Create order via fetch POST and get order id
+            // 1. First create Payment Intent
+            const intentResponse = await fetch(route("paymongo.payment-intent"), {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content,
+                    Accept: "application/json",
+                },
+                body: JSON.stringify({
+                    amount: paymentAmount * 100,
+                    description: `Order Payment`,
+                    payment_method_allowed: [ewalletType],
+                }),
+            });
+
+            if (!intentResponse.ok) {
+                const errorData = await intentResponse.json();
+                throw new Error(errorData.error || "Failed to create payment intent");
+            }
+
+            const intentData = await intentResponse.json();
+            const paymentIntentId = intentData.data.id;
+
+            // 2. Create Order with the intent ID
             const orderResponse = await fetch(route("orders.store"), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "X-CSRF-TOKEN": document.querySelector(
-                        'meta[name="csrf-token"]'
-                    ).content,
+                    "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content,
                     Accept: "application/json",
                 },
                 body: JSON.stringify({
@@ -69,6 +89,7 @@ const Checkout = ({ cartItems, total, auth }) => {
                     items: cartItems,
                     message: data.message || "",
                     is_paid: false,
+                    paymongo_payment_intent_id: paymentIntentId,
                 }),
             });
 
@@ -80,31 +101,27 @@ const Checkout = ({ cartItems, total, auth }) => {
             const orderData = await orderResponse.json();
             const orderId = orderData.order.id;
 
-            // Create PayMongo checkout session with order_id in metadata
-            const paymentResponse = await fetch(
-                route("paymongo.create-checkout"),
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRF-TOKEN": document.querySelector(
-                            'meta[name="csrf-token"]'
-                        ).content,
-                        Accept: "application/json",
+            // 3. Create PayMongo checkout session
+            const paymentResponse = await fetch(route("paymongo.create-checkout"), {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content,
+                    Accept: "application/json",
+                },
+                body: JSON.stringify({
+                    amount: paymentAmount * 100,
+                    description: `Order #${orderId}`,
+                    payment_method_type: ewalletType,
+                    metadata: {
+                        order_id: orderId,
+                        order_type: data.payment_type,
+                        user_id: auth.user.id,
+                        amount: paymentAmount,
+                        payment_intent_id: paymentIntentId,
                     },
-                    body: JSON.stringify({
-                        amount: paymentAmount * 100,
-                        description: `Order Payment`,
-                        payment_method_type: ewalletType,
-                        metadata: {
-                            order_id: orderId,
-                            order_type: data.payment_type,
-                            user_id: auth.user.id,
-                            amount: paymentAmount,
-                        },
-                    }),
-                }
-            );
+                }),
+            });
 
             const result = await paymentResponse.json();
             if (result.checkout_url) {
