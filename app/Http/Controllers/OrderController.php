@@ -81,7 +81,7 @@ class OrderController extends Controller
             'remaining_amount' => $validated['total_amount'] - $validated['down_payment_amount'],
             'message' => $validated['message'],
             'payment_method' => $validated['payment_method'],
-            'payment_intent_id' => $validated['paymongo_payment_intent_id'] ?? null,
+            'paymongo_payment_intent_id' => $validated['paymongo_payment_intent_id'] ?? null,
             'payment_status' => $paymentStatus,
             'status' => $orderStatus,
             'paid_at' => $isPaid ? now() : null
