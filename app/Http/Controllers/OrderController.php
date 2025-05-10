@@ -43,7 +43,7 @@ class OrderController extends Controller
     }
     public function store(Request $request)
 {
-    $validated = $request->validate([
+       $validated = $request->validate([
         'items' => 'required|array',
         'total_amount' => 'required|numeric',
         'down_payment_amount' => 'required|numeric',
@@ -58,20 +58,17 @@ class OrderController extends Controller
         $paymentType = $validated['payment_type'] ?? 'full';
         $isPaid = $validated['is_paid'] ?? false;
 
-        if (!$isPaid) {
-            $paymentStatus = $validated['payment_method'] === 'inperson' ? 'unpaid' : 'pending_payment';
+        // Determine payment status
+        if ($validated['payment_method'] === 'inperson') {
+            $paymentStatus = 'unpaid';
             $orderStatus = 'pending';
+        } elseif ($validated['payment_method'] === 'gcash' && $isPaid) {
+            // Immediate status for GCash payments
+            $paymentStatus = ($paymentType === 'full') ? 'paid' : 'partially_paid';
+            $orderStatus = 'processing';
         } else {
-            if ($paymentType === 'full') {
-                $paymentStatus = 'paid';
-                $orderStatus = 'processing';
-            } elseif ($paymentType === 'downpayment') {
-                $paymentStatus = 'partially_paid';
-                $orderStatus = 'processing';
-            } else {
-                $paymentStatus = 'paid';
-                $orderStatus = 'processing';
-            }
+            $paymentStatus = 'pending_payment';
+            $orderStatus = 'pending';
         }
 
         $orderData = [
