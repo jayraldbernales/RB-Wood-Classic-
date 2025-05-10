@@ -22,6 +22,7 @@ export default function HeroSection({ popularProducts }) {
     const [showProductModal, setShowProductModal] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [showStatusModal, setShowStatusModal] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
     const [statusModalProps, setStatusModalProps] = useState({
         isSuccess: true,
         title: "",
