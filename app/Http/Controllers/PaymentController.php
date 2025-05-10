@@ -224,7 +224,7 @@ class PaymentController extends Controller
 
             // Try multiple ways to find the order
             $order = Order::where('paymongo_payment_intent_id', $paymentIntentId)
-                        ->orWhere('id', $metadata['order_id'] ?? null)
+                        ->orWhere('id', $metadata['id'] ?? null)
                         ->orWhere(function($query) use ($metadata) {
                             if (isset($metadata['reference_number'])) {
                                 $query->where('id', $metadata['reference_number']);
