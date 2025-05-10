@@ -122,31 +122,46 @@ class PaymentController extends Controller
     public function handleWebhook(Request $request)
     {
         $payload = $request->all();
-        
-        // Add detailed logging
-        Log::info('Webhook received', ['payload' => $payload]);
-
-        if (!$this->paymongoService->verifyWebhookSignature($request)) {
-            Log::error('Invalid webhook signature', ['headers' => $request->headers->all()]);
+        Log::info('Webhook received', ['type' => $payload['data']['attributes']['type']]);
+    
+        // Skip signature verification in development
+        if (app()->isProduction() && !$this->verifySignature($request)) {
+            Log::error('Invalid signature');
             return response()->json(['error' => 'Invalid signature'], 403);
         }
-
+    
         $eventType = $payload['data']['attributes']['type'];
-        Log::info("Processing event: $eventType");
-
-        switch ($eventType) {
-            case 'payment.paid':
-                return $this->handlePaymentPaid($payload);
-                
-            case 'checkout_session.completed':
-                return $this->handleCheckoutSessionCompleted($payload);
-                
-            default:
-                Log::info("Unhandled event type", ['type' => $eventType]);
-                return response()->json(['status' => 'ignored']);
+        if ($eventType === 'payment.paid') {
+            return $this->handlePaidEvent($payload);
         }
+    
+        return response()->json(['status' => 'ignored']);
     }
-
+    
+    protected function handlePaidEvent($payload)
+    {
+        $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] ?? [];
+        $orderId = $metadata['order_id'] ?? null;
+    
+        if (!$orderId) {
+            Log::error('Missing order_id in metadata', ['metadata' => $metadata]);
+            return response()->json(['error' => 'Missing order_id'], 400);
+        }
+    
+        $order = Order::find($orderId);
+        if (!$order) {
+            Log::error('Order not found', ['order_id' => $orderId]);
+            return response()->json(['error' => 'Order not found'], 404);
+        }
+    
+        $order->update([
+            'payment_status' => 'paid',
+            'status' => 'processing'
+        ]);
+    
+        Log::info("Order {$order->id} marked as paid");
+        return response()->json(['status' => 'success']);
+    }
 
     protected function handleCheckoutSessionCompleted($payload)
     {
