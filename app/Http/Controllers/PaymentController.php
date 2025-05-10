@@ -121,29 +121,66 @@ class PaymentController extends Controller
 
     public function handleWebhook(Request $request)
     {
-        $payload = $request->all();
-        
-        // Add detailed logging
-        Log::info('Webhook received', ['payload' => $payload]);
-
-        if (!$this->paymongoService->verifyWebhookSignature($request)) {
-            Log::error('Invalid webhook signature', ['headers' => $request->headers->all()]);
+        // 1. Verify signature
+        if (!$this->verifyWebhookSignature($request)) {
+            Log::error('Invalid webhook signature');
             return response()->json(['error' => 'Invalid signature'], 403);
         }
-
+    
+        $payload = $request->all();
         $eventType = $payload['data']['attributes']['type'];
-        Log::info("Processing event: $eventType");
-
-        switch ($eventType) {
-            case 'payment.paid':
-                return $this->handlePaymentPaid($payload);
-                
-            case 'checkout_session.completed':
-                return $this->handleCheckoutSessionCompleted($payload);
-                
-            default:
-                Log::info("Unhandled event type", ['type' => $eventType]);
-                return response()->json(['status' => 'ignored']);
+    
+        // 2. Only handle payment.paid events
+        if ($eventType !== 'payment.paid') {
+            return response()->json(['status' => 'ignored']);
+        }
+    
+        // 3. Extract critical data
+        $paymentIntentId = $payload['data']['relationships']['payment_intent']['data']['id'] 
+            ?? $payload['data']['attributes']['data']['attributes']['payment_intent_id']
+            ?? null;
+    
+        $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] 
+            ?? [];
+    
+        if (!$paymentIntentId) {
+            Log::error('Payment intent ID missing in webhook');
+            return response()->json(['error' => 'Payment intent ID required'], 400);
+        }
+    
+        // 4. Process payment (simplified)
+        try {
+            $order = Order::where('id', $metadata['order_id'] ?? null)
+                ->first();
+    
+            if (!$order) {
+                Log::error('Order not found from metadata', [
+                    'order_id' => $metadata['order_id'] ?? null,
+                    'payment_intent_id' => $paymentIntentId
+                ]);
+                return response()->json(['error' => 'Order not found'], 404);
+            }
+    
+            // 5. Idempotency check - don't process if already paid
+            if ($order->payment_status === 'paid') {
+                return response()->json(['status' => 'already_processed']);
+            }
+    
+            // 6. Update order
+            $order->update([
+                'payment_status' => 'paid',
+                'status' => 'processing',
+                'paymongo_payment_intent_id' => $paymentIntentId,
+            ]);
+    
+            return response()->json(['status' => 'success']);
+    
+        } catch (\Exception $e) {
+            Log::error('Webhook processing failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['error' => 'Processing failed'], 500);
         }
     }
 
