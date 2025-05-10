@@ -57,9 +57,9 @@ class OrderController extends Controller
         try {
             $paymentType = $validated['payment_type'] ?? 'full';
             $isPaid = $validated['is_paid'] ?? false;
-    
-            if (!$isPaid) {
-                $paymentStatus = $validated['payment_method'] === 'inperson' ? 'unpaid' : 'paid';
+
+            if ($validated['payment_method'] === 'inperson') {
+                $paymentStatus = 'unpaid';
                 $orderStatus = 'pending';
             } else {
                 if ($paymentType === 'full') {
@@ -73,6 +73,7 @@ class OrderController extends Controller
                     $orderStatus = 'processing';
                 }
             }
+
     
             $orderData = [
                 'user_id' => auth()->id(),
