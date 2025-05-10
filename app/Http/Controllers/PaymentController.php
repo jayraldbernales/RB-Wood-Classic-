@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Order;
+use App\Models\OrderItem;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use App\Services\PayMongoService;
+use App\Models\Order;
+use App\Events\PaymentProcessed;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class PaymentController extends Controller
 {
@@ -16,83 +19,252 @@ class PaymentController extends Controller
         $this->paymongoService = $paymongoService;
     }
 
-    public function createCheckout(Request $request)
+    public function createPaymentIntent(Request $request)
     {
-        $validated = $request->validate([
-            'amount' => 'required|numeric|min:100',
-            'description' => 'required|string',
-            'payment_method' => 'required|in:gcash,grab_pay,paymaya',
-            'metadata' => 'required|array'
+        $validator = Validator::make($request->all(), [
+            'amount' => 'required|numeric|min:100', // Minimum 1 peso (100 cents)
+            'description' => 'required|string|max:255',
+            'payment_method_allowed' => 'sometimes|array',
+            'payment_method_allowed.*' => 'in:card,gcash,grab_pay,paymaya',
         ]);
 
-        $session = $this->paymongoService->createCheckoutSession(
-            $validated['amount'],
-            $validated['description'],
-            $validated['payment_method'],
-            $validated['metadata']
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => $validator->errors()->first()
+            ], 422);
+        }
+
+        $paymentIntent = $this->paymongoService->createPaymentIntent(
+            $request->amount,
+            $request->description,
+            $request->payment_method_allowed ?? ['card']
         );
 
-        if (!$session) {
-            return response()->json(['error' => 'Checkout creation failed'], 500);
+        if (!$paymentIntent) {
+            return response()->json([
+                'error' => 'Failed to create payment intent'
+            ], 500);
         }
 
         return response()->json([
-            'checkout_url' => $session['attributes']['checkout_url']
+            'data' => $paymentIntent,
+            'client_key' => $paymentIntent['attributes']['client_key']
         ]);
     }
 
+    public function createCheckout(Request $request)
+    {
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:100', // in cents
+            'description' => 'required|string|max:255',
+            'payment_method_type' => 'required|in:gcash,grab_pay,paymaya',
+            'metadata' => 'sometimes|array'
+        ]);
+
+        try {
+            $checkoutSession = $this->paymongoService->createCheckoutSession(
+                $validated['amount'],
+                $validated['description'],
+                $validated['payment_method_type'],
+                $validated['metadata'] ?? []
+            );
+
+            if (!$checkoutSession) {
+                return response()->json(['error' => 'Failed to create checkout session'], 500);
+            }
+
+            return response()->json([
+                'data' => $checkoutSession,
+                'checkout_url' => $checkoutSession['attributes']['checkout_url']
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function createCheckoutSession(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'amount' => 'required|numeric|min:100',
+            'description' => 'required|string|max:255',
+            'payment_method_type' => 'required|in:gcash,grab_pay,paymaya',
+            'metadata' => 'sometimes|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => $validator->errors()->first()
+            ], 422);
+        }
+
+        $checkoutSession = $this->paymongoService->createCheckoutSession(
+            $request->amount,
+            $request->description,
+            $request->payment_method_type,
+            $request->metadata ?? []
+        );
+
+        if (!$checkoutSession) {
+            return response()->json([
+                'error' => 'Failed to create checkout session'
+            ], 500);
+        }
+
+        return response()->json([
+            'data' => $checkoutSession
+        ]);
+    }
+
+
     public function handleWebhook(Request $request)
     {
-        // 1. Verify signature
+        $payload = $request->all();
+        
+        // Add detailed logging
+        Log::info('Webhook received', ['payload' => $payload]);
+
         if (!$this->paymongoService->verifyWebhookSignature($request)) {
-            Log::error('Invalid webhook signature');
+            Log::error('Invalid webhook signature', ['headers' => $request->headers->all()]);
             return response()->json(['error' => 'Invalid signature'], 403);
         }
 
-        $payload = $request->all();
-        Log::info('Webhook received', ['type' => $payload['data']['attributes']['type']]);
+        $eventType = $payload['data']['attributes']['type'];
+        Log::info("Processing event: $eventType");
 
-        // 2. Only process payment.paid events
-        if ($payload['data']['attributes']['type'] !== 'payment.paid') {
-            return response()->json(['status' => 'ignored']);
+        switch ($eventType) {
+            case 'payment.paid':
+                return $this->handlePaymentPaid($payload);
+                
+            case 'checkout_session.completed':
+                return $this->handleCheckoutSessionCompleted($payload);
+                
+            default:
+                Log::info("Unhandled event type", ['type' => $eventType]);
+                return response()->json(['status' => 'ignored']);
         }
+    }
 
-        // 3. Extract metadata and find order
-        $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] ?? [];
-        $orderId = $metadata['order_id'] ?? null;
-
-        if (!$orderId) {
-            Log::error('Order ID missing in webhook metadata');
-            return response()->json(['error' => 'Order ID required'], 400);
-        }
-
-        // 4. Update order status
+    protected function handlePaymentPaid($payload)
+    {
         try {
-            $order = Order::find($orderId);
+            Log::info('Full payment.paid payload', ['payload' => $payload]);
             
+            // Updated payload parsing
+            $paymentIntentId = $payload['data']['attributes']['data']['attributes']['payment_intent_id'] 
+                ?? $payload['data']['relationships']['payment_intent']['data']['id']
+                ?? null;
+                
+            $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] 
+                ?? $payload['data']['attributes']['metadata']
+                ?? [];
+                
+            if (!$paymentIntentId) {
+                Log::error('Payment intent ID not found in webhook payload');
+                return response()->json(['error' => 'Payment intent ID missing'], 400);
+            }
+
+            Log::info('Processing payment.paid event', [
+                'payment_intent_id' => $paymentIntentId,
+                'metadata' => $metadata
+            ]);
+
+            return $this->processPayment($paymentIntentId, $metadata);
+            
+        } catch (\Exception $e) {
+            Log::error('Error handling payment.paid', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'payload' => $payload
+            ]);
+            return response()->json(['error' => 'Processing failed'], 500);
+        }
+    }
+
+    protected function handleCheckoutSessionCompleted($payload)
+    {
+        try {
+            $checkoutSession = $payload['data']['attributes']['data'];
+            
+            // Get payment intent ID from the FIRST payment object
+            $paymentIntentId = $checkoutSession['attributes']['payments'][0]['attributes']['payment_intent_id'];
+            
+            $metadata = $checkoutSession['attributes']['metadata'] ?? [];
+            
+            Log::info('Processing checkout_session.completed', [
+                'payment_intent_id' => $paymentIntentId,
+                'full_payload' => $checkoutSession // For debugging
+            ]);
+
+            return $this->processPayment($paymentIntentId, $metadata);
+            
+        } catch (\Exception $e) {
+            Log::error('Error handling checkout_session.completed', [
+                'error' => $e->getMessage(),
+                'payload' => $payload
+            ]);
+            return response()->json(['error' => 'Processing failed'], 500);
+        }
+    }
+
+    protected function processPayment($paymentIntentId, $metadata)
+    {
+        try {
+            $verification = $this->paymongoService->verifyPayment($paymentIntentId);
+            
+            if (!$verification || !$verification['paid']) {
+                Log::warning("Payment not verified as paid", [
+                    'payment_intent_id' => $paymentIntentId,
+                    'verification' => $verification
+                ]);
+                return response()->json(['status' => 'not_paid']);
+            }
+
+            // Try multiple ways to find the order
+            $order = Order::where('paymongo_payment_intent_id', $paymentIntentId)
+                        ->orWhere('id', $metadata['order_id'] ?? null)
+                        ->orWhere(function($query) use ($metadata) {
+                            if (isset($metadata['reference_number'])) {
+                                $query->where('id', $metadata['reference_number']);
+                            }
+                        })
+                        ->first();
+
             if (!$order) {
-                Log::error('Order not found', ['order_id' => $orderId]);
+                Log::error("Order not found", [
+                    'payment_intent_id' => $paymentIntentId,
+                    'metadata' => $metadata,
+                    'possible_orders' => Order::where('payment_status', 'pending_payment')
+                        ->limit(10)
+                        ->get()
+                        ->toArray()
+                ]);
                 return response()->json(['error' => 'Order not found'], 404);
             }
 
-            // Idempotency check
-            if ($order->payment_status === 'paid') {
-                return response()->json(['status' => 'already_processed']);
-            }
-
-            $order->update([
+            $updateData = [
                 'payment_status' => 'paid',
                 'status' => 'processing',
-                'paid_at' => now()
+                'paymongo_payment_method_id' => $verification['payment_method'] ?? null
+            ];
+
+            $order->update($updateData);
+
+            Log::info("Order {$order->id} marked as paid", [
+                'method' => $verification['payment_method'],
+                'changes' => $updateData,
+                'previous_status' => $order->getOriginal('payment_status')
             ]);
 
-            Log::info('Order payment completed', ['order_id' => $orderId]);
             return response()->json(['status' => 'success']);
 
         } catch (\Exception $e) {
-            Log::error('Payment processing failed', [
+            Log::error("Payment processing failed", [
+                'payment_intent_id' => $paymentIntentId,
                 'error' => $e->getMessage(),
-                'order_id' => $orderId
+                'trace' => $e->getTraceAsString()
             ]);
             return response()->json(['error' => 'Processing failed'], 500);
         }
