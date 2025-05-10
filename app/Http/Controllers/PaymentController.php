@@ -121,6 +121,11 @@ class PaymentController extends Controller
 
     public function handleWebhook(Request $request)
     {
+         // Add this at the very start
+    Log::channel('stderr')->info('WEBHOOK RECEIVED', [
+        'headers' => $request->headers->all(),
+        'payload' => $request->all()
+    ]);
         $payload = $request->all();
         
         // Add detailed logging
