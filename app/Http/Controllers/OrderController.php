@@ -1,224 +1,136 @@
 <?php
 
-namespace App\Services;
+namespace App\Http\Controllers;
 
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Cart;
+use App\Services\PayMongoService;
+use Inertia\Inertia;
 
-class PayMongoService
+class OrderController extends Controller
 {
-    protected $secretKey;
-    protected $publicKey;
-    protected $baseUrl = 'https://api.paymongo.com/v1';
-    protected $webhookSecret;
 
-    public function __construct()
+    public function index(Request $request)
     {
-        $this->secretKey = config('services.paymongo.secret_key');
-        $this->publicKey = config('services.paymongo.public_key');
-        $this->webhookSecret = config('services.paymongo.webhook_secret');
+        $orders = Order::with(['items.product.images']) // Added .images here
+            ->where('user_id', auth()->id())
+            ->latest()
+            ->get();
+
+        return Inertia::render('Homepage/Orders', [
+            'orders' => $orders,
+            'auth' => [
+                'user' => auth()->user()
+            ]
+        ]);
     }
 
-    public function createPaymentIntent($amount, $description, $paymentMethodAllowed = ['card'])
+    public function show(Order $order)
     {
-        try {
-            $payload = [
-                'data' => [
-                    'attributes' => [
-                        'amount' => $amount,
-                        'payment_method_allowed' => $paymentMethodAllowed,
-                        'currency' => 'PHP',
-                        'description' => $description,
-                    ],
-                ],
-            ];
-
-            // Only include card options if card is allowed
-            if (in_array('card', $paymentMethodAllowed)) {
-                $payload['data']['attributes']['payment_method_options'] = [
-                    'card' => [
-                        'request_three_d_secure' => 'any',
-                    ],
-                ];
-            }
-
-            $response = Http::withBasicAuth($this->secretKey, '')
-                ->post("{$this->baseUrl}/payment_intents", $payload);
-
-            if ($response->successful()) {
-                return $response->json()['data'];
-            }
-
-            Log::error('PayMongo Payment Intent Error', [
-                'error' => $response->json(),
-                'amount' => $amount,
-                'description' => $description
-            ]);
-            return null;
-        } catch (\Exception $e) {
-            Log::error('PayMongo Payment Intent Exception', [
-                'error' => $e->getMessage(),
-                'amount' => $amount,
-                'description' => $description
-            ]);
-            return null;
+        if ($order->user_id !== auth()->id()) {
+            abort(403);
         }
+
+        $order->load(['items.product.images']); // Added .images here
+
+        return Inertia::render('Homepage/Orders', [
+            'order' => $order,
+            'auth' => [
+                'user' => auth()->user()
+            ]
+        ]);
     }
-
-    public function attachPaymentMethod($paymentIntentId, $paymentMethodId, $returnUrl)
-    {
-        try {
-            $response = Http::withBasicAuth($this->secretKey, '')
-                ->post("{$this->baseUrl}/payment_intents/{$paymentIntentId}/attach", [
-                    'data' => [
-                        'attributes' => [
-                            'payment_method' => $paymentMethodId,
-                            'return_url' => $returnUrl,
-                        ],
-                    ],
-                ]);
-
-            if ($response->successful()) {
-                return $response->json()['data'];
-            }
-
-            Log::error('PayMongo Attach Payment Method Error', [
-                'error' => $response->json(),
-                'payment_intent_id' => $paymentIntentId,
-                'payment_method_id' => $paymentMethodId
-            ]);
-            return null;
-        } catch (\Exception $e) {
-            Log::error('PayMongo Attach Payment Method Exception', [
-                'error' => $e->getMessage(),
-                'payment_intent_id' => $paymentIntentId,
-                'payment_method_id' => $paymentMethodId
-            ]);
-            return null;
-        }
-    }
-
-    public function createCheckoutSession($amount, $description, $paymentMethodType, $metadata = [])
-    {
-        try {
-
-            $successUrl = url(route('orders.confirmation', [
-                'order' => $metadata['order_id'] ?? 'temp'
-            ]));
-
-            $response = Http::withBasicAuth($this->secretKey, '')
-                ->post("{$this->baseUrl}/checkout_sessions", [
-                    'data' => [
-                        'attributes' => [
-                            'send_email_receipt' => false,
-                            'show_description' => true,
-                            'show_line_items' => true,
-                            'success_url' => $successUrl,
-                            'cancel_url' => url(route('checkout')),
-                            'description' => $description,
-                            'line_items' => [
-                                [
-                                    'amount' => $amount,
-                                    'currency' => 'PHP',
-                                    'name' => $description,
-                                    'quantity' => 1,
-                                ]
-                            ],
-                            'payment_method_types' => [$paymentMethodType],
-                            'metadata' => $metadata,
-                        ],
-                    ],
-                ]);
     
-            if ($response->successful()) {
-                return $response->json()['data'];
-            }
-    
-            Log::error('PayMongo Checkout Session Error', $response->json());
-            return null;
-    
-        } catch (\Exception $e) {
-            Log::error('PayMongo Checkout Session Exception', [
-                'error' => $e->getMessage()
-            ]);
-            return null;
-        }
-    }
-
-    public function verifyWebhookSignature(Request $request)
+    public function store(Request $request)
     {
-        if (empty($this->webhookSecret)) {
-            Log::warning('PayMongo webhook secret not configured');
-            return false;
-        }
-
-        $signature = $request->header('Paymongo-Signature');
-        $payload = $request->getContent();
-        $computedSignature = hash_hmac('sha256', $payload, $this->webhookSecret);
-
-        return hash_equals($signature, $computedSignature);
-    }
-
-    public function retrievePaymentIntent($paymentIntentId)
-    {
-        try {
-            $response = Http::withBasicAuth($this->secretKey, '')
-                ->get("{$this->baseUrl}/payment_intents/{$paymentIntentId}");
-
-            if ($response->successful()) {
-                return $response->json()['data'];
-            }
-
-            Log::error('PayMongo Retrieve Payment Intent Error', [
-                'error' => $response->json(),
-                'payment_intent_id' => $paymentIntentId
-            ]);
-            return null;
-        } catch (\Exception $e) {
-            Log::error('PayMongo Retrieve Payment Intent Exception', [
-                'error' => $e->getMessage(),
-                'payment_intent_id' => $paymentIntentId
-            ]);
-            return null;
-        }
-    }
-
-    public function verifyPayment($paymentIntentId)
-    {
-        $paymentIntent = $this->retrievePaymentIntent($paymentIntentId);
-        
-        if (!$paymentIntent) {
-            Log::error("Payment intent retrieval failed", ['id' => $paymentIntentId]);
-            return null;
-        }
-
-        $status = $paymentIntent['attributes']['status'];
-        $payments = $paymentIntent['attributes']['payments'] ?? [];
-
-        // Expanded status check for GCash
-        $paid = in_array($status, ['succeeded', 'paid', 'awaiting_next_action']) || 
-            collect($payments)->contains(function($payment) {
-                return in_array($payment['attributes']['status'] ?? null, [
-                    'paid', 
-                    'succeeded',
-                    'awaiting_fulfillment',
-                    'processing'
-                ]);
-            });
-
-        Log::debug('Payment verification', [
-            'intent_id' => $paymentIntentId,
-            'status' => $status,
-            'payments' => collect($payments)->pluck('attributes.status'),
-            'result' => $paid ? 'PAID' : 'NOT_PAID'
+        $validated = $request->validate([
+            'items' => 'required|array',
+            'total_amount' => 'required|numeric',
+            'down_payment_amount' => 'required|numeric',
+            'message' => 'nullable|string',
+            'payment_method' => 'required|in:card,gcash,grab_pay,paymaya,inperson',
+            'payment_type' => 'required|in:full,downpayment',
         ]);
 
-        return [
-            'status' => $status,
-            'paid' => $paid,
-            'payment_method' => $payments[0]['attributes']['payment_method']['type'] ?? null
-        ];
+        try {
+            $order = Order::create([
+                'user_id' => auth()->id(),
+                'total_amount' => $validated['total_amount'],
+                'down_payment_amount' => $validated['down_payment_amount'],
+                'remaining_amount' => $validated['total_amount'] - $validated['down_payment_amount'],
+                'message' => $validated['message'],
+                'payment_method' => $validated['payment_method'],
+                'payment_status' => 'pending_payment',
+                'status' => 'pending',
+            ]);
+
+            foreach ($validated['items'] as $item) {
+                OrderItem::create([
+                    'order_id' => $order->id,
+                    'product_id' => $item['product']['id'],
+                    'quantity' => $item['quantity'],
+                    'price' => $item['product']['price'],
+                ]);
+            }
+
+            $cartItemIds = collect($validated['items'])->pluck('id')->filter()->toArray();
+            if (!empty($cartItemIds)) {
+                Cart::where('user_id', auth()->id())
+                    ->whereIn('id', $cartItemIds)
+                    ->delete();
+            }
+
+            return response()->json([
+                'order' => [
+                    'id' => $order->id,
+                    'total_amount' => $order->total_amount,
+                    'payment_status' => $order->payment_status,
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
+    
+    public function confirmation(Request $request)
+    {
+        $order = $request->has('order') 
+            ? Order::with('items.product')->find($request->input('order'))
+            : (session()->has('order') ? Order::with('items.product')->find(session('order')->id) : null);
+
+        if (!$order) {
+            return redirect('Orders/Failed')->with('error', 'Order not found');
+        }
+
+        if ($order->paymongo_payment_intent_id) {
+            $verification = app(PayMongoService::class)->verifyPayment($order->paymongo_payment_intent_id);
+            
+            if ($verification && $verification['paid']) {
+                $order->update([
+                    'payment_status' => 'paid',
+                    'status' => 'processing'
+                ]);
+            }
+        }
+
+        return inertia('Orders/Confirmation', [
+            'order' => $order,
+            'auth' => ['user' => auth()->user()]
+        ]);
+    }
+
+    public function cancel(Order $order)
+    {
+        if ($order->status !== 'pending') {
+            return back()->withErrors(['error' => 'Only pending orders can be cancelled.']);
+        }
+    
+        $order->update(['status' => 'cancelled']);
+    
+        return back()->with('success', 'Order cancelled successfully.');
+    }
+    
 }
