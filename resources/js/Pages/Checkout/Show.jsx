@@ -47,7 +47,7 @@ const Checkout = ({ cartItems, total, auth }) => {
       setPaymentProcessing(true);
       
       try {
-        // 1. First create the order
+        // 1. Create order first
         const orderResponse = await fetch(route("orders.store"), {
           method: "POST",
           headers: {
@@ -61,14 +61,15 @@ const Checkout = ({ cartItems, total, auth }) => {
             down_payment_amount: data.payment_type === "full" ? total : total * 0.5,
             items: cartItems,
             message: data.message || "",
+            is_paid: false,
           }),
         });
     
         const orderData = await orderResponse.json();
         const orderId = orderData.order.id;
     
-        // 2. Create checkout session with ALL required metadata
-        const paymentResponse = await fetch(route("paymongo.create-checkout"), {
+        // 2. Create checkout session
+        const checkoutResponse = await fetch(route("paymongo.create-checkout"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -77,17 +78,16 @@ const Checkout = ({ cartItems, total, auth }) => {
           body: JSON.stringify({
             amount: data.payment_type === "full" ? total * 100 : total * 50,
             description: `Order #${orderId}`,
-            payment_method_type: ewalletType,
+            payment_method: ewalletType,
             metadata: {
               order_id: orderId,
               user_id: auth.user.id,
-              payment_type: data.payment_type,
-              // Add any other relevant data
-            },
+              payment_type: data.payment_type
+            }
           }),
         });
     
-        const result = await paymentResponse.json();
+        const result = await checkoutResponse.json();
         window.location.href = result.checkout_url;
     
       } catch (error) {
