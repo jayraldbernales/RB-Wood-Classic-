@@ -147,7 +147,7 @@ class PayMongoService
         }
     }
 
-    public function verifyWebhookSignature(Request $request)
+   public function verifyWebhookSignature(Request $request)
     {
         if (empty($this->webhookSecret)) {
             Log::warning('PayMongo webhook secret not configured');
@@ -155,25 +155,49 @@ class PayMongoService
         }
 
         $signature = $request->header('Paymongo-Signature');
+        
+        if (empty($signature)) {
+            Log::warning('PayMongo signature header is missing');
+            return false;
+        }
+
+        Log::debug('Verifying signature', [
+            'signature' => $signature,
+            'has_content' => !empty($request->getContent())
+        ]);
+
         $payload = $request->getContent();
         $computedSignature = hash_hmac('sha256', $payload, $this->webhookSecret);
 
-        return hash_equals($signature, $computedSignature);
+        $isValid = hash_equals($signature, $computedSignature);
+        
+        if (!$isValid) {
+            Log::warning('Signature verification failed', [
+                'received' => $signature,
+                'computed' => $computedSignature
+            ]);
+        }
+
+        return $isValid;
     }
 
     public function retrievePaymentIntent($paymentIntentId)
     {
         try {
+            Log::info("Retrieving payment intent", ['id' => $paymentIntentId]);
+            
             $response = Http::withBasicAuth($this->secretKey, '')
                 ->get("{$this->baseUrl}/payment_intents/{$paymentIntentId}");
 
             if ($response->successful()) {
+                Log::debug("Payment intent retrieved successfully");
                 return $response->json()['data'];
             }
 
             Log::error('PayMongo Retrieve Payment Intent Error', [
                 'error' => $response->json(),
-                'payment_intent_id' => $paymentIntentId
+                'payment_intent_id' => $paymentIntentId,
+                'status_code' => $response->status()
             ]);
             return null;
         } catch (\Exception $e) {
@@ -194,31 +218,28 @@ class PayMongoService
             return null;
         }
 
-        $status = $paymentIntent['attributes']['status'];
+        $status = $paymentIntent['attributes']['status'] ?? null;
         $payments = $paymentIntent['attributes']['payments'] ?? [];
 
-        // Expanded status check for GCash
-        $paid = in_array($status, ['succeeded', 'paid', 'awaiting_next_action']) || 
-            collect($payments)->contains(function($payment) {
-                return in_array($payment['attributes']['status'] ?? null, [
-                    'paid', 
-                    'succeeded',
-                    'awaiting_fulfillment',
-                    'processing'
-                ]);
+        // Expanded status check for all e-wallet providers
+        $successStatuses = ['succeeded', 'paid', 'awaiting_next_action', 'processing'];
+        
+        $paid = in_array($status, $successStatuses) || 
+            collect($payments)->contains(function($payment) use ($successStatuses) {
+                return in_array($payment['attributes']['status'] ?? null, $successStatuses);
             });
 
         Log::debug('Payment verification', [
             'intent_id' => $paymentIntentId,
             'status' => $status,
-            'payments' => collect($payments)->pluck('attributes.status'),
+            'payments' => collect($payments)->pluck('attributes.status')->toArray(),
             'result' => $paid ? 'PAID' : 'NOT_PAID'
         ]);
 
         return [
             'status' => $status,
             'paid' => $paid,
-            'payment_method' => $payments[0]['attributes']['payment_method']['type'] ?? null
+            'payment_method' => isset($payments[0]) ? ($payments[0]['attributes']['payment_method']['type'] ?? null) : null
         ];
     }
 }
