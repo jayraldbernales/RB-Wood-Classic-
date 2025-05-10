@@ -809,23 +809,9 @@ const Checkout = ({ cartItems, total, auth }) => {
                                                     </button>
 
                                                     <p className="small text-muted mt-3 text-center">
-                                                        By placing your order,
-                                                        you agree to our{" "}
-                                                        <Link
-                                                            href="/terms"
-                                                            className="text-decoration-none text-primary"
-                                                        >
-                                                            Terms of Service
-                                                        </Link>{" "}
-                                                        and{" "}
-                                                        <Link
-                                                            href="/privacy"
-                                                            className="text-decoration-none text-primary"
-                                                        >
-                                                            Privacy Policy
-                                                        </Link>
-                                                        .
+                                                        By placing your order, you agree to our Terms of Service and Privacy Policy.
                                                     </p>
+
                                                 </div>
                                             </div>
                                         )}
