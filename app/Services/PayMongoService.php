@@ -105,7 +105,7 @@ class PayMongoService
         try {
 
             $successUrl = url(route('orders.confirmation', [
-                'order' => $metadata['id'] ?? 'temp'
+                'order' => $metadata['order_id'] ?? 'temp'
             ]));
 
             $response = Http::withBasicAuth($this->secretKey, '')
