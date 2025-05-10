@@ -44,95 +44,96 @@ const Checkout = ({ cartItems, total, auth }) => {
     };
 
    const processEwalletPayment = async (ewalletType) => {
-        setPaymentProcessing(true);
-        setPaymentError(null);
+    setPaymentProcessing(true);
+    setPaymentError(null);
 
-        try {
-            const paymentAmount =
-                data.payment_type === "full" ? total : total * 0.5;
+    try {
+        const paymentAmount = data.payment_type === "full" ? total : total * 0.5;
 
-            // Create order first - this will return an order ID
-            const orderResponse = await fetch(route("orders.store"), {
+        // First create the order with is_paid=true for immediate status update
+        const orderResponse = await fetch(route("orders.store"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content,
+                "Accept": "application/json",
+            },
+            body: JSON.stringify({
+                payment_method: ewalletType,
+                payment_type: data.payment_type,
+                total_amount: total,
+                down_payment_amount: paymentAmount,
+                items: cartItems,
+                message: data.message || "",
+                is_paid: true, // Mark as paid immediately
+            }),
+        });
+
+        if (!orderResponse.ok) {
+            const errorData = await orderResponse.json();
+            throw new Error(errorData.error || "Failed to create order");
+        }
+
+        const orderData = await orderResponse.json();
+        const orderId = orderData.order.id;
+        
+        // Create PayMongo checkout session
+        const paymentResponse = await fetch(route("paymongo.create-checkout"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content,
+                "Accept": "application/json",
+            },
+            body: JSON.stringify({
+                amount: Math.round(paymentAmount * 100), // convert to cents
+                description: `Order #${orderId} Payment`,
+                payment_method_type: ewalletType,
+                metadata: {
+                    order_id: orderId,
+                    user_id: auth.user.id,
+                    amount: paymentAmount,
+                    payment_type: data.payment_type,
+                    is_paid: true, // Additional flag
+                },
+            }),
+        });
+
+        if (!paymentResponse.ok) {
+            // If payment fails, we should mark the order as failed
+            await fetch(route("orders.update-status", orderId), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "X-CSRF-TOKEN": document.querySelector(
-                        'meta[name="csrf-token"]'
-                    ).content,
-                    Accept: "application/json",
+                    "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content,
                 },
                 body: JSON.stringify({
-                    payment_method: data.payment_method,
-                    payment_type: data.payment_type,
-                    total_amount: total,
-                    down_payment_amount: paymentAmount,
-                    items: cartItems,
-                    message: data.message || "",
-                    is_paid: false,
+                    payment_status: 'failed',
+                    status: 'failed'
                 }),
             });
-
-            if (!orderResponse.ok) {
-                const errorData = await orderResponse.json();
-                throw new Error(errorData.error || "Failed to create order");
-            }
-
-            const orderData = await orderResponse.json();
-            const orderId = orderData.order.id;
             
-            console.log("Order created with ID:", orderId);
-
-            // Create PayMongo checkout session with order_id in metadata
-            const paymentResponse = await fetch(
-                route("paymongo.create-checkout"),
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRF-TOKEN": document.querySelector(
-                            'meta[name="csrf-token"]'
-                        ).content,
-                        Accept: "application/json",
-                    },
-                    body: JSON.stringify({
-                        amount: paymentAmount * 100, // convert to cents
-                        description: `Order #${orderId} Payment`,
-                        payment_method_type: ewalletType,
-                        metadata: {
-                            order_id: orderId,
-                            order_type: data.payment_type,
-                            user_id: auth.user.id,
-                            amount: paymentAmount,
-                        },
-                    }),
-                }
-            );
-
-            if (!paymentResponse.ok) {
-                const errorData = await paymentResponse.json();
-                throw new Error(errorData.error || "Payment processing failed");
-            }
-
-            const result = await paymentResponse.json();
-            
-            console.log("Payment checkout created:", result);
-            
-            if (result.checkout_url) {
-                // Store the orderId in localStorage before redirecting
-                localStorage.setItem('pendingOrderId', orderId);
-                
-                // Redirect to PayMongo checkout page
-                window.location.href = result.checkout_url;
-            } else {
-                throw new Error("No checkout URL received");
-            }
-        } catch (error) {
-            console.error("Payment error:", error);
-            setPaymentError(error.message);
-        } finally {
-            setPaymentProcessing(false);
+            throw new Error("Payment processing failed");
         }
-    };
+
+        const result = await paymentResponse.json();
+        
+        if (result.checkout_url) {
+            // Store order ID in sessionStorage
+            sessionStorage.setItem('pendingOrderId', orderId);
+            
+            // Redirect to PayMongo checkout page
+            window.location.href = result.checkout_url;
+        } else {
+            throw new Error("No checkout URL received");
+        }
+    } catch (error) {
+        console.error("Payment error:", error);
+        setPaymentError(error.message);
+    } finally {
+        setPaymentProcessing(false);
+    }
+};
 
     
     const loadPayMongo = () => {
