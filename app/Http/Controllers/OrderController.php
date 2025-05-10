@@ -116,7 +116,17 @@ class OrderController extends Controller
     }
 }
 
+public function updateStatus(Order $order, Request $request)
+{
+    $validated = $request->validate([
+        'payment_status' => 'required|string',
+        'status' => 'required|string'
+    ]);
 
+    $order->update($validated);
+
+    return response()->json(['success' => true]);
+}
     
 public function confirmation(Request $request)
 {
