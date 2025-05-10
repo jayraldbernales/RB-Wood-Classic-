@@ -42,114 +42,102 @@ class OrderController extends Controller
         ]);
     }
     public function store(Request $request)
-{
-       $validated = $request->validate([
-        'items' => 'required|array',
-        'total_amount' => 'required|numeric',
-        'down_payment_amount' => 'required|numeric',
-        'message' => 'nullable|string',
-        'payment_method' => 'required|in:card,gcash,grab_pay,paymaya,inperson',
-        'payment_type' => 'required|in:full,downpayment',
-        'paymongo_payment_intent_id' => 'nullable|string',
-        'is_paid' => 'sometimes|boolean'
-    ]);
+    {
+        $validated = $request->validate([
+            'items' => 'required|array',
+            'total_amount' => 'required|numeric',
+            'down_payment_amount' => 'required|numeric',
+            'message' => 'nullable|string',
+            'payment_method' => 'required|in:card,gcash,grab_pay,paymaya,inperson',
+            'payment_type' => 'required|in:full,downpayment',
+            'paymongo_payment_intent_id' => 'nullable|string',
+            'is_paid' => 'sometimes|boolean'
+        ]);
+        
+        try {
+            $paymentType = $validated['payment_type'] ?? 'full';
+            $isPaid = $validated['is_paid'] ?? false;
     
-    try {
-        $paymentType = $validated['payment_type'] ?? 'full';
-        $isPaid = $validated['is_paid'] ?? false;
-
-        // Determine payment status
-        if ($validated['payment_method'] === 'inperson') {
-            $paymentStatus = 'unpaid';
-            $orderStatus = 'pending';
-        } elseif ($validated['payment_method'] === 'gcash' && $isPaid) {
-            // Immediate status for GCash payments
-            $paymentStatus = ($paymentType === 'full') ? 'paid' : 'partially_paid';
-            $orderStatus = 'processing';
-        } else {
-            $paymentStatus = 'pending_payment';
-            $orderStatus = 'pending';
+            if (!$isPaid) {
+                $paymentStatus = $validated['payment_method'] === 'inperson' ? 'unpaid' : 'paid';
+                $orderStatus = 'pending';
+            } else {
+                if ($paymentType === 'full') {
+                    $paymentStatus = 'paid';
+                    $orderStatus = 'processing';
+                } elseif ($paymentType === 'downpayment') {
+                    $paymentStatus = 'partially_paid';
+                    $orderStatus = 'processing';
+                } else {
+                    $paymentStatus = 'paid';
+                    $orderStatus = 'processing';
+                }
+            }
+    
+            $orderData = [
+                'user_id' => auth()->id(),
+                'total_amount' => $validated['total_amount'],
+                'down_payment_amount' => $validated['down_payment_amount'],
+                'remaining_amount' => $validated['total_amount'] - $validated['down_payment_amount'],
+                'message' => $validated['message'],
+                'payment_method' => $validated['payment_method'],
+                'paymongo_payment_intent_id' => $validated['paymongo_payment_intent_id'] ?? null,
+                'payment_status' => $paymentStatus,
+                'status' => $orderStatus,
+                'paid_at' => $isPaid ? now() : null
+            ];
+    
+            $order = Order::create($orderData);
+            
+            foreach ($validated['items'] as $item) {
+                OrderItem::create([
+                    'order_id' => $order->id,
+                    'product_id' => $item['product']['id'],
+                    'quantity' => $item['quantity'],
+                    'price' => $item['product']['price'],
+                ]);
+            }
+            
+            $cartItemIds = collect($validated['items'])->pluck('id')->filter()->toArray();
+            if (!empty($cartItemIds)) {
+                Cart::where('user_id', auth()->id())
+                    ->whereIn('id', $cartItemIds)
+                    ->delete();
+            }
+    
+            if ($request->expectsJson()) {
+                return response()->json(['order' => $order], 201);
+            }
+    
+            return redirect()->route('orders.confirmation', ['order' => $order->id]);
+            
+        } catch (\Exception $e) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Failed to create order: ' . $e->getMessage()], 500);
+            }
+            return back()->with('error', 'Failed to create order: ' . $e->getMessage());
         }
-
-        $orderData = [
-            'user_id' => auth()->id(),
-            'total_amount' => $validated['total_amount'],
-            'down_payment_amount' => $validated['down_payment_amount'],
-            'remaining_amount' => $validated['total_amount'] - $validated['down_payment_amount'],
-            'message' => $validated['message'],
-            'payment_method' => $validated['payment_method'],
-            'paymongo_payment_intent_id' => $validated['paymongo_payment_intent_id'] ?? null,
-            'payment_status' => $paymentStatus,
-            'status' => $orderStatus,
-            'paid_at' => $isPaid ? now() : null
-        ];
-
-        $order = Order::create($orderData);
-        
-        foreach ($validated['items'] as $item) {
-            OrderItem::create([
-                'order_id' => $order->id,
-                'product_id' => $item['product']['id'],
-                'quantity' => $item['quantity'],
-                'price' => $item['product']['price'],
-            ]);
-        }
-        
-        $cartItemIds = collect($validated['items'])->pluck('id')->filter()->toArray();
-        if (!empty($cartItemIds)) {
-            Cart::where('user_id', auth()->id())
-                ->whereIn('id', $cartItemIds)
-                ->delete();
-        }
-
-        if ($request->expectsJson()) {
-            return response()->json(['order' => $order], 201);
-        }
-
-        return redirect()->route('orders.confirmation', ['order' => $order->id]);
-        
-    } catch (\Exception $e) {
-        if ($request->expectsJson()) {
-            return response()->json(['error' => 'Failed to create order: ' . $e->getMessage()], 500);
-        }
-        return back()->with('error', 'Failed to create order: ' . $e->getMessage());
     }
-}
 
-public function updateStatus(Order $order, Request $request)
-{
-    $validated = $request->validate([
-        'payment_status' => 'required|string',
-        'status' => 'required|string'
-    ]);
-
-    $order->update($validated);
-
-    return response()->json(['success' => true]);
-}
     
 public function confirmation(Request $request)
 {
+    // Check for order ID in URL or session
     $order = null;
     
-    // Check for order in URL, session, or localStorage
     if ($request->has('order')) {
         $order = Order::with('items.product')->find($request->input('order'));
     } elseif (session()->has('order')) {
         $order = Order::with('items.product')->find(session('order')->id);
-    } elseif ($request->has('payment_intent_id')) {
-        // Check by payment intent ID if coming from redirect
-        $order = Order::where('paymongo_payment_intent_id', $request->input('payment_intent_id'))
-            ->with('items.product')
-            ->first();
     }
 
+    // If no order found, redirect to home with error
     if (!$order) {
         return redirect('Orders/Failed')->with('error', 'Order not found');
     }
 
-    // For GCash payments, verify payment status immediately
-    if ($order->payment_method === 'gcash' && $order->paymongo_payment_intent_id) {
+    // Update payment status if paymongo_payment_intent_id exists
+    if ($order->paymongo_payment_intent_id) {
         $paymongoService = app(\App\Services\PayMongoService::class);
         $paymentIntent = $paymongoService->retrievePaymentIntent($order->paymongo_payment_intent_id);
 
@@ -158,8 +146,12 @@ public function confirmation(Request $request)
             $payments = $paymentIntent['attributes']['payments'] ?? [];
 
             if ($status === 'succeeded' || collect($payments)->contains(fn($p) => $p['attributes']['status'] === 'succeeded')) {
-                $order->payment_status = $order->payment_type === 'full' ? 'paid' : 'partially_paid';
+                $order->payment_status = 'paid';
                 $order->status = 'processing';
+                $order->save();
+            } elseif ($status === 'pending') {
+                $order->payment_status = 'pending_payment';
+                $order->status = 'pending';
                 $order->save();
             }
         }
