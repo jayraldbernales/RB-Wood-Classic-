@@ -102,50 +102,27 @@ class PayMongoService
 
     public function createCheckoutSession($amount, $description, $paymentMethodType, $metadata = [])
     {
-        try {
-
-            $successUrl = url(route('orders.confirmation', [
-                'order' => $metadata['order_id'] ?? 'temp'
-            ]));
-
-            $response = Http::withBasicAuth($this->secretKey, '')
-                ->post("{$this->baseUrl}/checkout_sessions", [
-                    'data' => [
-                        'attributes' => [
-                            'send_email_receipt' => false,
-                            'show_description' => true,
-                            'show_line_items' => true,
-                            'success_url' => $successUrl,
-                            'cancel_url' => url(route('checkout')),
-                            'description' => $description,
-                            'line_items' => [
-                                [
-                                    'amount' => $amount,
-                                    'currency' => 'PHP',
-                                    'name' => $description,
-                                    'quantity' => 1,
-                                ]
-                            ],
-                            'payment_method_types' => [$paymentMethodType],
-                            'metadata' => $metadata,
-                        ],
+        $response = Http::withBasicAuth($this->secretKey, '')
+            ->post("{$this->baseUrl}/checkout_sessions", [
+                'data' => [
+                    'attributes' => [
+                        'line_items' => [[
+                            'amount' => $amount,
+                            'currency' => 'PHP',
+                            'name' => $description,
+                            'quantity' => 1,
+                        ]],
+                        'payment_method_types' => [$paymentMethodType],
+                        'success_url' => route('orders.confirmation'),
+                        'cancel_url' => route('checkout'),
+                        'metadata' => $metadata, // Critical: Includes order_id
                     ],
-                ]);
-    
-            if ($response->successful()) {
-                return $response->json()['data'];
-            }
-    
-            Log::error('PayMongo Checkout Session Error', $response->json());
-            return null;
-    
-        } catch (\Exception $e) {
-            Log::error('PayMongo Checkout Session Exception', [
-                'error' => $e->getMessage()
+                ],
             ]);
-            return null;
-        }
+    
+        return $response->json()['data'] ?? null;
     }
+
 
     public function verifyWebhookSignature(Request $request)
     {
