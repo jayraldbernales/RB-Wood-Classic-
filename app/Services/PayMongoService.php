@@ -102,27 +102,50 @@ class PayMongoService
 
     public function createCheckoutSession($amount, $description, $paymentMethodType, $metadata = [])
     {
-        $response = Http::withBasicAuth($this->secretKey, '')
-            ->post("{$this->baseUrl}/checkout_sessions", [
-                'data' => [
-                    'attributes' => [
-                        'line_items' => [[
-                            'amount' => $amount,
-                            'currency' => 'PHP',
-                            'name' => $description,
-                            'quantity' => 1,
-                        ]],
-                        'payment_method_types' => [$paymentMethodType],
-                        'success_url' => route('orders.confirmation'),
-                        'cancel_url' => route('checkout'),
-                        'metadata' => $metadata, // Critical: Includes order_id
-                    ],
-                ],
-            ]);
-    
-        return $response->json()['data'] ?? null;
-    }
+        try {
 
+            $successUrl = url(route('orders.confirmation', [
+                'order' => $metadata['order_id'] ?? 'temp'
+            ]));
+
+            $response = Http::withBasicAuth($this->secretKey, '')
+                ->post("{$this->baseUrl}/checkout_sessions", [
+                    'data' => [
+                        'attributes' => [
+                            'send_email_receipt' => false,
+                            'show_description' => true,
+                            'show_line_items' => true,
+                            'success_url' => $successUrl,
+                            'cancel_url' => url(route('checkout')),
+                            'description' => $description,
+                            'line_items' => [
+                                [
+                                    'amount' => $amount,
+                                    'currency' => 'PHP',
+                                    'name' => $description,
+                                    'quantity' => 1,
+                                ]
+                            ],
+                            'payment_method_types' => [$paymentMethodType],
+                            'metadata' => $metadata,
+                        ],
+                    ],
+                ]);
+    
+            if ($response->successful()) {
+                return $response->json()['data'];
+            }
+    
+            Log::error('PayMongo Checkout Session Error', $response->json());
+            return null;
+    
+        } catch (\Exception $e) {
+            Log::error('PayMongo Checkout Session Exception', [
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
 
     public function verifyWebhookSignature(Request $request)
     {
@@ -170,10 +193,10 @@ class PayMongoService
             Log::error("Payment intent retrieval failed", ['id' => $paymentIntentId]);
             return null;
         }
-    
+
         $status = $paymentIntent['attributes']['status'];
         $payments = $paymentIntent['attributes']['payments'] ?? [];
-    
+
         // Expanded status check for GCash
         $paid = in_array($status, ['succeeded', 'paid', 'awaiting_next_action']) || 
             collect($payments)->contains(function($payment) {
@@ -184,14 +207,14 @@ class PayMongoService
                     'processing'
                 ]);
             });
-    
+
         Log::debug('Payment verification', [
             'intent_id' => $paymentIntentId,
             'status' => $status,
             'payments' => collect($payments)->pluck('attributes.status'),
             'result' => $paid ? 'PAID' : 'NOT_PAID'
         ]);
-    
+
         return [
             'status' => $status,
             'paid' => $paid,
