@@ -120,22 +120,26 @@ class OrderController extends Controller
     
 public function confirmation(Request $request)
 {
-    // Check for order ID in URL or session
     $order = null;
     
+    // Check for order in URL, session, or localStorage
     if ($request->has('order')) {
         $order = Order::with('items.product')->find($request->input('order'));
     } elseif (session()->has('order')) {
         $order = Order::with('items.product')->find(session('order')->id);
+    } elseif ($request->has('payment_intent_id')) {
+        // Check by payment intent ID if coming from redirect
+        $order = Order::where('paymongo_payment_intent_id', $request->input('payment_intent_id'))
+            ->with('items.product')
+            ->first();
     }
 
-    // If no order found, redirect to home with error
     if (!$order) {
         return redirect('Orders/Failed')->with('error', 'Order not found');
     }
 
-    // Update payment status if paymongo_payment_intent_id exists
-    if ($order->paymongo_payment_intent_id) {
+    // For GCash payments, verify payment status immediately
+    if ($order->payment_method === 'gcash' && $order->paymongo_payment_intent_id) {
         $paymongoService = app(\App\Services\PayMongoService::class);
         $paymentIntent = $paymongoService->retrievePaymentIntent($order->paymongo_payment_intent_id);
 
@@ -144,12 +148,8 @@ public function confirmation(Request $request)
             $payments = $paymentIntent['attributes']['payments'] ?? [];
 
             if ($status === 'succeeded' || collect($payments)->contains(fn($p) => $p['attributes']['status'] === 'succeeded')) {
-                $order->payment_status = 'paid';
+                $order->payment_status = $order->payment_type === 'full' ? 'paid' : 'partially_paid';
                 $order->status = 'processing';
-                $order->save();
-            } elseif ($status === 'pending') {
-                $order->payment_status = 'pending_payment';
-                $order->status = 'pending';
                 $order->save();
             }
         }
