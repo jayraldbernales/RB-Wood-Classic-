@@ -46,11 +46,10 @@ const Checkout = ({ cartItems, total, auth }) => {
     const processEwalletPayment = async (ewalletType) => {
         setPaymentProcessing(true);
         setPaymentError(null);
-
+    
         try {
-            const paymentAmount =
-                data.payment_type === "full" ? total : total * 0.5;
-
+            const paymentAmount = data.payment_type === "full" ? total : total * 0.5;
+    
             // Create order via fetch POST and get order id
             const orderResponse = await fetch(route("orders.store"), {
                 method: "POST",
@@ -71,16 +70,15 @@ const Checkout = ({ cartItems, total, auth }) => {
                     is_paid: false,
                 }),
             });
-
+    
             if (!orderResponse.ok) {
                 const errorData = await orderResponse.json();
                 throw new Error(errorData.error || "Failed to create order");
             }
-
+    
             const orderData = await orderResponse.json();
-            const orderId = orderData.order.id;
-
-            // Create PayMongo checkout session with order_id in metadata
+            
+            // Create PayMongo checkout session with correct metadata
             const paymentResponse = await fetch(
                 route("paymongo.create-checkout"),
                 {
@@ -97,7 +95,7 @@ const Checkout = ({ cartItems, total, auth }) => {
                         description: `Order Payment`,
                         payment_method_type: ewalletType,
                         metadata: {
-                            order_id: orderId,
+                            id: orderData.order.id,  // Changed from order_id to id
                             order_type: data.payment_type,
                             user_id: auth.user.id,
                             amount: paymentAmount,
@@ -105,7 +103,7 @@ const Checkout = ({ cartItems, total, auth }) => {
                     }),
                 }
             );
-
+    
             const result = await paymentResponse.json();
             if (result.checkout_url) {
                 window.location.href = result.checkout_url;
