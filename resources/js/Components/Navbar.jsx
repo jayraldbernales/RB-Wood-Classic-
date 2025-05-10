@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react";
+import { Link, router } from "@inertiajs/react";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import CartModal from "@/Pages/modals/CartModal ";
@@ -6,19 +6,21 @@ import CartModal from "@/Pages/modals/CartModal ";
 const Navbar = ({
     toggleSidebar,
     setShowLogoutModal,
-    searchTerm = "",
-    setSearchTerm = () => {}, // Default empty function
+    searchTerm: initialSearchTerm = "",
+    setSearchTerm: externalSetSearchTerm = null,
 }) => {
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartItems, setCartItems] = useState([]);
-    const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
+    const [localSearchTerm, setLocalSearchTerm] = useState(initialSearchTerm);
 
-    // Sync local search term with prop
-    useEffect(() => {
-        setLocalSearchTerm(searchTerm);
-    }, [searchTerm]);
+    // Handle search submission
+    const handleSearchSubmit = (e) => {
+        e.preventDefault();
+        // Redirect to products page with search term
+        router.get(route("products.index"), { search: localSearchTerm });
+    };
 
-    // Fetch Cart Items
+    // Fetch Cart Items on Mount & Update
     const fetchCartItems = async () => {
         try {
             const response = await axios.get(route("cart.index"));
@@ -33,6 +35,16 @@ const Navbar = ({
         fetchCartItems();
     }, []);
 
+    // Sync local search term with parent component if on products page
+    useEffect(() => {
+        if (
+            externalSetSearchTerm &&
+            typeof externalSetSearchTerm === "function"
+        ) {
+            externalSetSearchTerm(localSearchTerm);
+        }
+    }, [localSearchTerm, externalSetSearchTerm]);
+
     const handleRemoveItem = async (cartItemId) => {
         try {
             await axios.delete(route("cart.destroy", { id: cartItemId }));
@@ -42,22 +54,17 @@ const Navbar = ({
         }
     };
 
-    // Safe search handler
-    const handleSearchChange = (e) => {
-        const value = e.target.value;
-        setLocalSearchTerm(value);
-        try {
-            setSearchTerm(value);
-        } catch (err) {
-            console.error("Search handler error:", err);
-        }
+    const handleCartClick = () => {
+        setShowCartModal(true);
     };
 
     return (
         <>
             <nav className="navbar navbar-expand-lg navbar-light px-4 py-3 position-absolute top-0 start-0 w-100 custom-navbar">
                 <div className="container-fluid d-flex justify-content-between align-items-center">
+                    {/* Left: Sidebar Toggle & Search */}
                     <div className="d-flex align-items-center gap-3">
+                        {/* Sidebar Toggle Button */}
                         <button
                             className="btn p-2"
                             onClick={toggleSidebar}
@@ -71,8 +78,9 @@ const Navbar = ({
                             <i className="bi bi-list"></i>
                         </button>
 
-                        {/* Updated Search Bar */}
-                        <div
+                        {/* Search Form */}
+                        <form
+                            onSubmit={handleSearchSubmit}
                             className="position-relative"
                             style={{ maxWidth: "300px", width: "100%" }}
                         >
@@ -82,7 +90,9 @@ const Navbar = ({
                                 placeholder="Search products..."
                                 aria-label="Search"
                                 value={localSearchTerm}
-                                onChange={handleSearchChange}
+                                onChange={(e) =>
+                                    setLocalSearchTerm(e.target.value)
+                                }
                                 style={{
                                     paddingLeft: "40px",
                                     height: "40px",
@@ -90,21 +100,28 @@ const Navbar = ({
                                     boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
                                 }}
                             />
-                            <i
-                                className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
+                            <button
+                                type="submit"
+                                className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
                                 style={{
                                     fontSize: "1.2rem",
-                                    pointerEvents: "none",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
                                 }}
-                            ></i>
-                        </div>
+                            >
+                                <i className="bi bi-search"></i>
+                            </button>
+                        </form>
                     </div>
 
+                    {/* Right: Icons & User Menu */}
                     <div className="d-flex align-items-center gap-3">
+                        {/* Cart Button */}
                         <button
                             className="btn text-dark bg-white p-2 position-relative"
                             style={{ fontSize: "1.5rem" }}
-                            onClick={() => setShowCartModal(true)}
+                            onClick={handleCartClick}
                         >
                             <i className="bi bi-cart-plus"></i>
                             {cartItems.length > 0 && (
@@ -137,6 +154,7 @@ const Navbar = ({
                             </button>
                         </a>
 
+                        {/* Profile Dropdown */}
                         <div className="dropdown">
                             <a
                                 href="#"
@@ -157,7 +175,7 @@ const Navbar = ({
                                         className="dropdown-item"
                                         href={route("settings.edit")}
                                     >
-                                        <i className="bi bi-person me-2"></i>
+                                        <i className="bi bi-person me-2"></i>{" "}
                                         Profile
                                     </Link>
                                 </li>
@@ -170,7 +188,7 @@ const Navbar = ({
                                         href="#"
                                         onClick={() => setShowLogoutModal(true)}
                                     >
-                                        <i className="bi bi-box-arrow-right me-2"></i>
+                                        <i className="bi bi-box-arrow-right me-2"></i>{" "}
                                         Log Out
                                     </a>
                                 </li>
@@ -180,6 +198,7 @@ const Navbar = ({
                 </div>
             </nav>
 
+            {/* Cart Modal */}
             <CartModal
                 show={showCartModal}
                 onHide={() => setShowCartModal(false)}
