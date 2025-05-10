@@ -57,6 +57,9 @@ Route::get('/checkout/product/{product}', [CheckoutController::class, 'showSingl
 Route::post('/checkout/product/{product}', [CheckoutController::class, 'storeSingleProduct'])
     ->name('checkout.product.store');
 
+Route::post('/orders/{order}/update-status', [OrderController::class, 'updateStatus'])
+    ->name('orders.update-status');
+
 // Checkout
 Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout');
 Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
