@@ -122,45 +122,65 @@ class PaymentController extends Controller
     public function handleWebhook(Request $request)
     {
         $payload = $request->all();
-        Log::info('Webhook received', ['type' => $payload['data']['attributes']['type']]);
-    
-        // Skip signature verification in development
-        if (app()->isProduction() && !$this->verifySignature($request)) {
-            Log::error('Invalid signature');
+        
+        // Add detailed logging
+        Log::info('Webhook received', ['payload' => $payload]);
+
+        if (!$this->paymongoService->verifyWebhookSignature($request)) {
+            Log::error('Invalid webhook signature', ['headers' => $request->headers->all()]);
             return response()->json(['error' => 'Invalid signature'], 403);
         }
-    
+
         $eventType = $payload['data']['attributes']['type'];
-        if ($eventType === 'payment.paid') {
-            return $this->handlePaidEvent($payload);
+        Log::info("Processing event: $eventType");
+
+        switch ($eventType) {
+            case 'payment.paid':
+                return $this->handlePaymentPaid($payload);
+                
+            case 'checkout_session.completed':
+                return $this->handleCheckoutSessionCompleted($payload);
+                
+            default:
+                Log::info("Unhandled event type", ['type' => $eventType]);
+                return response()->json(['status' => 'ignored']);
         }
-    
-        return response()->json(['status' => 'ignored']);
     }
-    
-    protected function handlePaidEvent($payload)
+
+    protected function handlePaymentPaid($payload)
     {
-        $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] ?? [];
-        $orderId = $metadata['order_id'] ?? null;
-    
-        if (!$orderId) {
-            Log::error('Missing order_id in metadata', ['metadata' => $metadata]);
-            return response()->json(['error' => 'Missing order_id'], 400);
+        try {
+            Log::info('Full payment.paid payload', ['payload' => $payload]);
+            
+            // Updated payload parsing
+            $paymentIntentId = $payload['data']['attributes']['data']['attributes']['payment_intent_id'] 
+                ?? $payload['data']['relationships']['payment_intent']['data']['id']
+                ?? null;
+                
+            $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] 
+                ?? $payload['data']['attributes']['metadata']
+                ?? [];
+                
+            if (!$paymentIntentId) {
+                Log::error('Payment intent ID not found in webhook payload');
+                return response()->json(['error' => 'Payment intent ID missing'], 400);
+            }
+
+            Log::info('Processing payment.paid event', [
+                'payment_intent_id' => $paymentIntentId,
+                'metadata' => $metadata
+            ]);
+
+            return $this->processPayment($paymentIntentId, $metadata);
+            
+        } catch (\Exception $e) {
+            Log::error('Error handling payment.paid', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'payload' => $payload
+            ]);
+            return response()->json(['error' => 'Processing failed'], 500);
         }
-    
-        $order = Order::find($orderId);
-        if (!$order) {
-            Log::error('Order not found', ['order_id' => $orderId]);
-            return response()->json(['error' => 'Order not found'], 404);
-        }
-    
-        $order->update([
-            'payment_status' => 'paid',
-            'status' => 'processing'
-        ]);
-    
-        Log::info("Order {$order->id} marked as paid");
-        return response()->json(['status' => 'success']);
     }
 
     protected function handleCheckoutSessionCompleted($payload)
@@ -189,44 +209,6 @@ class PaymentController extends Controller
         }
     }
 
-    protected function handlePaymentPaid($payload)
-    {
-        try {
-            Log::info('Full payment.paid payload', ['payload' => $payload]);
-            
-            // Extract payment intent ID from different possible locations
-            $paymentIntentId = $payload['data']['attributes']['data']['attributes']['payment_intent_id'] 
-                ?? $payload['data']['relationships']['payment_intent']['data']['id']
-                ?? $payload['data']['attributes']['payment_intent_id']
-                ?? null;
-                
-            // Deep metadata extraction
-            $metadata = $payload['data']['attributes']['data']['attributes']['metadata'] 
-                ?? $payload['data']['attributes']['metadata']
-                ?? ($payload['data']['attributes']['data']['metadata'] ?? []);
-    
-            if (!$paymentIntentId) {
-                Log::error('Payment intent ID not found in webhook payload');
-                return response()->json(['error' => 'Payment intent ID missing'], 400);
-            }
-    
-            Log::info('Processing payment.paid event', [
-                'payment_intent_id' => $paymentIntentId,
-                'metadata' => $metadata
-            ]);
-    
-            return $this->processPayment($paymentIntentId, $metadata);
-            
-        } catch (\Exception $e) {
-            Log::error('Error handling payment.paid', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'payload' => $payload
-            ]);
-            return response()->json(['error' => 'Processing failed'], 500);
-        }
-    }
-    
     protected function processPayment($paymentIntentId, $metadata)
     {
         try {
@@ -239,41 +221,45 @@ class PaymentController extends Controller
                 ]);
                 return response()->json(['status' => 'not_paid']);
             }
-    
+
             // Try multiple ways to find the order
             $order = Order::where('paymongo_payment_intent_id', $paymentIntentId)
                         ->orWhere('id', $metadata['order_id'] ?? null)
+                        ->orWhere(function($query) use ($metadata) {
+                            if (isset($metadata['reference_number'])) {
+                                $query->where('id', $metadata['reference_number']);
+                            }
+                        })
                         ->first();
-    
+
             if (!$order) {
                 Log::error("Order not found", [
                     'payment_intent_id' => $paymentIntentId,
                     'metadata' => $metadata,
                     'possible_orders' => Order::where('payment_status', 'pending_payment')
-                        ->latest()
-                        ->limit(5)
+                        ->limit(10)
                         ->get()
                         ->toArray()
                 ]);
                 return response()->json(['error' => 'Order not found'], 404);
             }
-    
+
             $updateData = [
                 'payment_status' => 'paid',
                 'status' => 'processing',
                 'paymongo_payment_method_id' => $verification['payment_method'] ?? null
             ];
-    
+
             $order->update($updateData);
-    
+
             Log::info("Order {$order->id} marked as paid", [
                 'method' => $verification['payment_method'],
                 'changes' => $updateData,
                 'previous_status' => $order->getOriginal('payment_status')
             ]);
-    
+
             return response()->json(['status' => 'success']);
-    
+
         } catch (\Exception $e) {
             Log::error("Payment processing failed", [
                 'payment_intent_id' => $paymentIntentId,
