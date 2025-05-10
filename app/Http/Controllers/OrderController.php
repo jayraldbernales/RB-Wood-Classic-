@@ -91,7 +91,7 @@ class OrderController extends Controller
         
         foreach ($validated['items'] as $item) {
             OrderItem::create([
-                'order_id' => $order->id,
+                'id' => $order->id,
                 'product_id' => $item['product']['id'],
                 'quantity' => $item['quantity'],
                 'price' => $item['product']['price'],
