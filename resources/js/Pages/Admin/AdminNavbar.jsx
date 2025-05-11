@@ -1,8 +1,16 @@
 import React, { useState } from "react";
+import { router } from "@inertiajs/react";
 import ContactMessagesModal from "./ContactMessagesModal";
 
 const AdminNavbar = ({ toggleSidebar, setShowLogoutModal }) => {
     const [showMessagesModal, setShowMessagesModal] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+
+    const handleSearch = (e) => {
+        e.preventDefault();
+        // Redirect to orders page with the search term
+        router.get(route("admin.orders"), { search: searchTerm });
+    };
 
     return (
         <>
@@ -25,7 +33,38 @@ const AdminNavbar = ({ toggleSidebar, setShowLogoutModal }) => {
                         </button>
 
                         {/* Search Bar */}
-                        
+                        <form
+                            className="position-relative"
+                            style={{ maxWidth: "300px", width: "100%" }}
+                            onSubmit={handleSearch}
+                        >
+                            <input
+                                type="text"
+                                className="form-control bg-light text-dark px-5"
+                                placeholder="Search orders..."
+                                aria-label="Search"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{
+                                    paddingLeft: "40px",
+                                    height: "40px",
+                                    border: "1px solid #ddd",
+                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                                }}
+                            />
+                            <button
+                                type="submit"
+                                className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
+                                style={{
+                                    fontSize: "1.2rem",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                <i className="bi bi-search"></i>
+                            </button>
+                        </form>
                     </div>
 
                     {/* Right: Icons & User Menu */}

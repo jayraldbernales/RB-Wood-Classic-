@@ -18,7 +18,7 @@ import OrderDetailsModal from "./OrderDetailsModal";
 import OrderEditModal from "./OrderEdit";
 import StatusModal from "../modals/StatusModal";
 
-export default function Orders({ orders: initialOrders }) {
+export default function Orders({ orders: initialOrders, filters = {} }) {
     // Accept orders as a prop
     useEffect(() => {
         AOS.init();
@@ -29,7 +29,7 @@ export default function Orders({ orders: initialOrders }) {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
-    const [searchTerm, setSearchTerm] = useState("");
+    const [searchTerm, setSearchTerm] = useState(filters.search || "");
     const [statusFilter, setStatusFilter] = useState("All");
     const [sortConfig, setSortConfig] = useState({
         key: "date",
@@ -56,6 +56,12 @@ export default function Orders({ orders: initialOrders }) {
         title: "",
         message: "",
     });
+
+    useEffect(() => {
+        if (filters.search) {
+            setSearchTerm(filters.search);
+        }
+    }, [filters.search]);
 
     // Function to show status modal
     const handleShowStatusModal = (isSuccess, title, message) => {

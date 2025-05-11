@@ -9,13 +9,24 @@ use Inertia\Inertia;
 
 class AdminOrderController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $orders = Order::with(['user', 'items.product.images'])
+            ->when($request->search, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('id', 'like', "%{$search}%")
+                    ->orWhereHas('user', function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%");
+                    });
+                });
+            })
             ->latest()
             ->get();
             
-        return inertia('Admin/Orders', ['orders' => $orders]);
+        return inertia('Admin/Orders', [
+            'orders' => $orders,
+            'filters' => $request->only(['search']) // Make sure this is included
+        ]);
     }
 
     public function edit($id)
