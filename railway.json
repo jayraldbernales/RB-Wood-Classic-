@@ -18,14 +18,14 @@
             "php82Extensions.zip"
           ]
         },
-        "install": [
+          "install": [
           "composer install --no-dev --optimize-autoloader",
-          "npm install"
+          "npm install",
+          "npm run build"
         ],
         "build": [
-          "npm run dev",
-          "php artisan cache:clear",
-          "php artisan view:clear",
+          "php artisan optimize:clear",
+          "php artisan optimize",
           "mkdir -p /data/products",
           "php artisan storage:link"
         ]
