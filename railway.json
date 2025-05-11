@@ -20,12 +20,12 @@
         },
         "install": [
           "composer install --no-dev --optimize-autoloader",
-          "npm install"
+          "npm install",
+          "npm run build"
         ],
         "build": [
           "php artisan optimize:clear",
           "php artisan optimize",
-          "npm run build",
           "mkdir -p /data/products",
           "php artisan storage:link"
         ]
