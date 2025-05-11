@@ -62,6 +62,7 @@ class UserProductController extends Controller
         
         $categories = Category::all();
         
+        // Replace paginate() with get()
         $products = Product::with(['category', 'images'])
             ->when($categoryId, function ($query) use ($categoryId) {
                 return $query->where('category_id', $categoryId);
@@ -70,11 +71,10 @@ class UserProductController extends Controller
                 return $query->where('name', 'like', "%{$searchTerm}%");
             })
             ->orderBy('created_at', 'desc')
-            ->paginate(8)
-            ->withQueryString();
+            ->get(); // Changed from paginate(8)
 
         return Inertia::render('Homepage/Product', [
-            'products' => $products,
+            'products' => $products, // Now returns a collection instead of paginator
             'categories' => $categories,
             'popularProducts' => $this->getPopularProducts(),
             'filters' => [

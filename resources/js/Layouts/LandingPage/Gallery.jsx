@@ -3,11 +3,11 @@ import "aos/dist/aos.css"; // Import AOS styles
 import AOS from "aos"; // Import AOS
 
 // Import Images
-const img1 = "/img/products/doors/d2.png";
-const img2 = "/img/products/dining_set/Dset2.png";
+const img1 = "/img/products/dining_set/DiningTable3.jpg";
+const img2 = "/img/products/dining_set/DiningTable6.jpg";
 const img3 = "/img/products/dining_set/DiningTable4.jpg";
-const img4 = "/img/products/cabinets/Cabinet2.png";
-const img5 = "/img/products/dining_set/Dset1.jpg";
+const img4 = "/img/products/dining_set/DiningTable1.jpg";
+const img5 = "/img/products/dining_set/Diningtable.png";
 const img6 = "/img/products/cabinets/Hcabinet.png";
 
 // Images Array

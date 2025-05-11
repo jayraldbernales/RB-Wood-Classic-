@@ -178,8 +178,8 @@ export default function Product({
 
                         {/* Products Grid */}
                         <div className="row g-4" style={{ minHeight: "600px" }}>
-                            {products.data.length > 0 ? (
-                                products.data.map((product) => (
+                            {products.length > 0 ? (
+                                products.map((product) => (
                                     <div
                                         key={product.id}
                                         className="col-xl-3 col-lg-4 col-md-6 mb-4"
@@ -255,43 +255,6 @@ export default function Product({
                                 </div>
                             )}
                         </div>
-
-                        {/* Pagination */}
-                        {products.links && products.links.length > 3 && (
-                            <div className="d-flex justify-content-center mt-5">
-                                <nav aria-label="Page navigation">
-                                    <ul className="pagination rounded">
-                                        {products.links.map((link, index) => (
-                                            <li
-                                                key={index}
-                                                className={`page-item ${
-                                                    link.active ? "active" : ""
-                                                } ${
-                                                    !link.url ? "disabled" : ""
-                                                }`}
-                                            >
-                                                <Link
-                                                    href={link.url || "#"}
-                                                    className="page-link"
-                                                    preserveScroll
-                                                    preserveState
-                                                    only={[
-                                                        "products",
-                                                        "filters",
-                                                    ]}
-                                                >
-                                                    <span
-                                                        dangerouslySetInnerHTML={{
-                                                            __html: link.label,
-                                                        }}
-                                                    />
-                                                </Link>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </nav>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
