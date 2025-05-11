@@ -20,7 +20,7 @@
         },
         "install": [
           "composer install --no-dev --optimize-autoloader",
-          "npm install",
+          "npm install"
         ],
         "build": [
           "php artisan optimize:clear",
