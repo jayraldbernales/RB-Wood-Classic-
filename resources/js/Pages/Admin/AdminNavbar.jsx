@@ -25,30 +25,7 @@ const AdminNavbar = ({ toggleSidebar, setShowLogoutModal }) => {
                         </button>
 
                         {/* Search Bar */}
-                        <div
-                            className="position-relative"
-                            style={{ maxWidth: "300px", width: "100%" }}
-                        >
-                            <input
-                                type="text"
-                                className="form-control bg-light text-dark px-5"
-                                placeholder="Search..."
-                                aria-label="Search"
-                                style={{
-                                    paddingLeft: "40px",
-                                    height: "40px",
-                                    border: "1px solid #ddd",
-                                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                                }}
-                            />
-                            <i
-                                className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"
-                                style={{
-                                    fontSize: "1.2rem",
-                                    pointerEvents: "none",
-                                }}
-                            ></i>
-                        </div>
+                        
                     </div>
 
                     {/* Right: Icons & User Menu */}
